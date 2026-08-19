@@ -1,0 +1,21 @@
+# Windows App SDK / WinUI 3
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+
+# MSIX packaging
+*.appxrecipe
+AppxManifest.xml
+
+# User-specific
+*.csproj.user
+*.slnx
+
+# Logs & temp
+*.log
+crster/
+.crster/

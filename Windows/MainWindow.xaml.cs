@@ -1,6 +1,9 @@
+using System;
 using Evania.ViewModels;
+using Evania.Views;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Windows.Graphics;
 
 // To learn more about WinUI, the WinUI project structure,
@@ -29,5 +32,21 @@ public sealed partial class MainWindow : Window
         int y = displayArea.WorkArea.Y + (displayArea.WorkArea.Height - AppWindow.Size.Height) / 2;
 
         AppWindow.Move(new PointInt32(x, y));
+    }
+
+    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        string tag = ViewModel.SelectedMenuItem?.Tag ?? string.Empty;
+        Type? pageType = tag switch
+        {
+            nameof(ScreenshotPage) => typeof(ScreenshotPage),
+            _ => null
+        };
+
+        if (pageType != null &&
+            NavigationPresenter.CurrentSourcePageType != pageType)
+        {
+            NavigationPresenter.Navigate(pageType);
+        }
     }
 }

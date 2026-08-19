@@ -20,7 +20,8 @@
             IsBackButtonVisible="Collapsed"
             IsPaneOpen="False"
             MenuItemsSource="{x:Bind ViewModel.MenuItems}"
-            SelectedItem="{x:Bind ViewModel.SelectedMenuItem, Mode=TwoWay}">
+            SelectedItem="{x:Bind ViewModel.SelectedMenuItem, Mode=TwoWay}"
+            SelectionChanged="NavView_SelectionChanged">
             
             <NavigationView.MenuItemTemplate>
                 <DataTemplate x:DataType="vm:NavigationItemViewModel">

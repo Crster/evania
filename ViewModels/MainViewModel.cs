@@ -32,7 +32,7 @@ namespace Evania.ViewModels
                 new NavigationItemViewModel
                 {
                     Content = "Screenshot",
-                    Tag = "SamplePage1",
+                    Tag = "ScreenshotPage",
                     IconGlyph = "\uF406",
                     IsSelected = true
                 },

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Evania.Views.ScreenshotPage"
+    x:Name="PageRoot"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Evania.ViewModels"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:interactivity="using:Microsoft.Xaml.Interactivity"
+    xmlns:core="using:Microsoft.Xaml.Interactions.Core"
+    xmlns:converters="using:Evania.Converters"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </Page.Resources>
+
+    <Grid Padding="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Top-center "Take screenshot" button -->
+        <StackPanel
+            Grid.Row="0"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Margin="0,0,0,16">
+            <Button
+                Command="{x:Bind ViewModel.TakeScreenshotCommand}"
+                Style="{StaticResource AccentButtonStyle}"
+                Padding="20,10"
+                HorizontalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE114;" FontSize="16" />
+                    <TextBlock Text="Take screenshot" FontSize="14" FontWeight="SemiBold" />
+                </StackPanel>
+            </Button>
+
+            <ProgressRing
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay}"
+                Width="24"
+                Height="24"
+                HorizontalAlignment="Center"
+                Margin="0,8,0,0" />
+        </StackPanel>
+
+        <!-- Message when empty -->
+        <TextBlock
+            Grid.Row="1"
+            x:Name="EmptyMessage"
+            Text="No screenshots yet. Click the button above to capture your screen."
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Margin="0,8,0,16"
+            Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay}"
+            Opacity="0.6" />
+
+        <!-- Grid of screenshots -->
+        <GridView
+            Grid.Row="2"
+            ItemsSource="{x:Bind ViewModel.Screenshots}"
+            SelectionMode="None"
+            IsItemClickEnabled="True"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            Padding="8">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="vm:ScreenshotItem">
+                    <Grid
+                        Width="220"
+                        Height="160"
+                        PointerEntered="Grid_PointerEntered"
+                        PointerExited="Grid_PointerExited">
+                        <Border
+                            BorderThickness="1"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            CornerRadius="8"
+                            Padding="4">
+                            <Image
+                                Source="{x:Bind Image}"
+                                Stretch="Uniform"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+
+                        <Button
+                            Command="{Binding ElementName=PageRoot, Path=ViewModel.SaveScreenshotCommand}"
+                            CommandParameter="{Binding}"
+                            Width="48"
+                            Height="48"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            CornerRadius="24"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Visibility="{x:Bind ShowSaveButton, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <SymbolIcon Symbol="Save" />
+                        </Button>
+                    </Grid>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+    </Grid>
+</Page>

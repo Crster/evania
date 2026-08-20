@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 
 namespace Evania.Services
@@ -75,6 +76,36 @@ namespace Evania.Services
             BitmapImage image = new();
             await image.SetSourceAsync(stream.AsRandomAccessStream());
             return image;
+        }
+
+        /// <summary>
+        /// Loads a Bitmap from disk so it can be reused (e.g. for clipboard copy).
+        /// </summary>
+        public static Bitmap LoadBitmap(string filePath)
+        {
+            MemoryStream stream = new();
+            using (FileStream fs = File.OpenRead(filePath))
+            {
+                fs.CopyTo(stream);
+            }
+            stream.Position = 0;
+            return new Bitmap(stream);
+        }
+
+        /// <summary>
+        /// Copies the given Bitmap to the Windows clipboard so the user can paste it
+        /// directly into apps such as Paint. The bitmap is disposed by this method.
+        /// </summary>
+        public static void CopyBitmapToClipboard(Bitmap bitmap)
+        {
+            using MemoryStream stream = new();
+            bitmap.Save(stream, ImageFormat.Png);
+            stream.Position = 0;
+
+            DataPackage dataPackage = new();
+            dataPackage.SetData("image/png", stream.AsRandomAccessStream());
+            Clipboard.SetContent(dataPackage);
+            Clipboard.Flush();
         }
 
         /// <summary>

@@ -77,6 +77,31 @@ namespace Evania.ViewModels
         }
 
         [RelayCommand]
+        private void CopyScreenshot(ScreenshotItem? item)
+        {
+            if (item is null)
+            {
+                return;
+            }
+
+            if (item.Bitmap is not null)
+            {
+                ScreenshotService.CopyBitmapToClipboard(item.Bitmap);
+                return;
+            }
+
+            try
+            {
+                using var bitmap = ScreenshotService.LoadBitmap(item.SourcePath!);
+                ScreenshotService.CopyBitmapToClipboard(bitmap);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to copy screenshot: {ex.Message}");
+            }
+        }
+
+        [RelayCommand]
         private async Task LoadScreenshotsAsync()
         {
             StorageFolder folder = await ScreenshotService.GetScreenshotsFolderAsync();

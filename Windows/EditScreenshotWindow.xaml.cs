@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
@@ -11,7 +12,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
-using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Evania.Services;
 using WinColor = Windows.UI.Color;
@@ -1177,7 +1177,11 @@ public sealed partial class EditScreenshotWindow : Window
 
     private void CopyButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!_hasSelection)
+            return;
+
         CopySelectionToClipboard();
+        Close();
     }
 
     private void CopyTextButton_Click(object sender, RoutedEventArgs e)
@@ -1289,7 +1293,11 @@ public sealed partial class EditScreenshotWindow : Window
                 if (InputKeyboardSource.GetKeyStateForCurrentThread(WinVirtualKey.Control)
                     is CoreVirtualKeyStates.Down)
                 {
-                    CopySelectionToClipboard();
+                    if (_hasSelection)
+                    {
+                        CopySelectionToClipboard();
+                        Close();
+                    }
                 }
                 break;
 
@@ -1318,29 +1326,87 @@ public sealed partial class EditScreenshotWindow : Window
 
     private void CopySelectionToClipboard()
     {
-        Bitmap bitmapToCopy;
-        if (_hasSelection)
-        {
-            bitmapToCopy = CropBitmap(_currentSelection);
-        }
-        else
-        {
-            bitmapToCopy = (Bitmap)_screenshotBitmap.Clone();
-        }
+        using var bitmapToCopy = CropBitmap(_currentSelection);
 
-        using var stream = new MemoryStream();
-        bitmapToCopy.Save(stream, ImageFormat.Png);
-        stream.Position = 0;
+        var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
-        var dataPackage = new DataPackage();
-        dataPackage.SetData("image/png", stream.AsRandomAccessStream());
-        Clipboard.SetContent(dataPackage);
-        Clipboard.Flush();
+        if (!NativeMethods.OpenClipboard(hWnd))
+            return;
 
-        if (_hasSelection)
+        try
         {
-            bitmapToCopy.Dispose();
+            NativeMethods.EmptyClipboard();
+
+            using var dibStream = new MemoryStream();
+            var dibData = ConvertToDib(bitmapToCopy);
+            dibStream.Write(dibData, 0, dibData.Length);
+            dibStream.Position = 0;
+
+            var hGlobal = Marshal.AllocHGlobal(dibData.Length);
+            Marshal.Copy(dibData, 0, hGlobal, dibData.Length);
+
+            NativeMethods.SetClipboardData(8 /* CF_DIB */, hGlobal);
+            // hGlobal is now owned by the clipboard; do not free it.
         }
+        finally
+        {
+            NativeMethods.CloseClipboard();
+        }
+    }
+
+    private static byte[] ConvertToDib(Bitmap bitmap)
+    {
+        using var bmp = new Bitmap(bitmap);
+        var bmpData = bmp.LockBits(
+            new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height),
+            ImageLockMode.ReadOnly,
+            PixelFormat.Format32bppArgb);
+
+        try
+        {
+            int colorTableSize = 0;
+            int headerSize = 40; // BITMAPINFOHEADER
+            int imageSize = Math.Abs(bmpData.Stride) * bmp.Height;
+            int totalSize = headerSize + imageSize;
+            var dib = new byte[totalSize];
+
+            // BITMAPINFOHEADER
+            BitConverter.GetBytes(headerSize).CopyTo(dib, 0);
+            BitConverter.GetBytes(bmp.Width).CopyTo(dib, 4);
+            BitConverter.GetBytes(bmp.Height).CopyTo(dib, 8); // positive = bottom-up
+            BitConverter.GetBytes((short)1).CopyTo(dib, 12);
+            BitConverter.GetBytes((short)32).CopyTo(dib, 14);
+            BitConverter.GetBytes(0).CopyTo(dib, 16); // BI_RGB
+            BitConverter.GetBytes(imageSize).CopyTo(dib, 20);
+            BitConverter.GetBytes(0).CopyTo(dib, 24); // XPelsPerMeter
+            BitConverter.GetBytes(0).CopyTo(dib, 28); // YPelsPerMeter
+            BitConverter.GetBytes(0).CopyTo(dib, 32); // ColorsUsed
+            BitConverter.GetBytes(0).CopyTo(dib, 36); // ColorsImportant
+
+            // Pixel data
+            Marshal.Copy(bmpData.Scan0, dib, headerSize, imageSize);
+
+            return dib;
+        }
+        finally
+        {
+            bmp.UnlockBits(bmpData);
+        }
+    }
+
+    private static class NativeMethods
+    {
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool CloseClipboard();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool EmptyClipboard();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
     }
 
     private async Task SaveSelectionAsync()

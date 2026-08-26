@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -14,6 +15,7 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Evania.Services;
 using WinColor = Windows.UI.Color;
+using WinSize = Windows.Foundation.Size;
 using WinRect = Windows.Foundation.Rect;
 using WinPoint = Windows.Foundation.Point;
 using WinVirtualKey = Windows.System.VirtualKey;
@@ -30,6 +32,19 @@ public enum EditToolMode
     DrawArrow,
     DrawText,
     Blur
+}
+
+internal sealed class TextGroup
+{
+    public List<string> Lines { get; } = new() { "" };
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double FontSize { get; set; } = 16;
+    public int CursorLine { get; set; }
+    public int CursorColumn { get; set; }
+    public readonly List<TextBlock> TextBlocks = new();
+    public ShapeRectangle? CursorRect { get; set; }
+    public double CharWidth { get; set; }
 }
 
 public sealed partial class EditScreenshotWindow : Window
@@ -52,6 +67,12 @@ public sealed partial class EditScreenshotWindow : Window
     private double _toolbarDragOffsetX;
     private double _toolbarDragOffsetY;
 
+    // Text input state
+    private TextGroup? _activeTextGroup;
+    private DispatcherTimer? _cursorBlinkTimer;
+    private bool _cursorVisible;
+    private bool _isInTextInputMode;
+
     public EditScreenshotWindow(Bitmap screenshotBitmap)
     {
         _screenshotBitmap = screenshotBitmap;
@@ -63,12 +84,24 @@ public sealed partial class EditScreenshotWindow : Window
 
         RootGrid.Focus(FocusState.Programmatic);
 
-        UpdateToolButtonStyles();
+                UpdateToolButtonStyles();
     }
 
     private void RootGrid_Loaded(object sender, RoutedEventArgs e)
     {
         UpdateTintOverlay();
+        CenterToolbar();
+    }
+
+    private void CenterToolbar()
+    {
+        var gridWidth = RootGrid.ActualWidth;
+        var toolbarWidth = ToolbarBorder.ActualWidth;
+        if (gridWidth > 0 && toolbarWidth > 0)
+        {
+            var centeredLeft = (gridWidth - toolbarWidth) / 2;
+            ToolbarBorder.Margin = new Thickness(centeredLeft, ToolbarBorder.Margin.Top, 0, 0);
+        }
     }
 
     private async void LoadScreenshotImage()
@@ -86,9 +119,6 @@ public sealed partial class EditScreenshotWindow : Window
         _toolbarDragOffsetX = position.X - ToolbarBorder.Margin.Left;
         _toolbarDragOffsetY = position.Y - ToolbarBorder.Margin.Top;
         GripIcon.CapturePointer(e.Pointer);
-
-        GripIcon.PointerMoved += GripIcon_PointerMoved;
-        GripIcon.PointerReleased += GripIcon_PointerReleased;
     }
 
     private void GripIcon_PointerMoved(object sender, PointerRoutedEventArgs e)
@@ -109,8 +139,6 @@ public sealed partial class EditScreenshotWindow : Window
     {
         _isDraggingToolbar = false;
         GripIcon.ReleasePointerCapture(e.Pointer);
-        GripIcon.PointerMoved -= GripIcon_PointerMoved;
-        GripIcon.PointerReleased -= GripIcon_PointerReleased;
     }
 
     #endregion
@@ -119,18 +147,21 @@ public sealed partial class EditScreenshotWindow : Window
 
     private void SelectToolButton_Click(object sender, RoutedEventArgs e)
     {
+        DeactivateTextInput();
         _currentTool = EditToolMode.Select;
         UpdateToolButtonStyles();
     }
 
     private void DrawBoxToolButton_Click(object sender, RoutedEventArgs e)
     {
+        DeactivateTextInput();
         _currentTool = EditToolMode.DrawBox;
         UpdateToolButtonStyles();
     }
 
     private void DrawArrowToolButton_Click(object sender, RoutedEventArgs e)
     {
+        DeactivateTextInput();
         _currentTool = EditToolMode.DrawArrow;
         UpdateToolButtonStyles();
     }
@@ -143,6 +174,7 @@ public sealed partial class EditScreenshotWindow : Window
 
     private void BlurToolButton_Click(object sender, RoutedEventArgs e)
     {
+        DeactivateTextInput();
         _currentTool = EditToolMode.Blur;
         UpdateToolButtonStyles();
     }
@@ -168,6 +200,22 @@ public sealed partial class EditScreenshotWindow : Window
         }
 
         var point = e.GetCurrentPoint(RootGrid).Position;
+
+        if (_currentTool == EditToolMode.DrawText)
+        {
+            var existingGroup = HitTestTextGroup(point.X, point.Y);
+            if (existingGroup != null)
+            {
+                ActivateTextGroup(existingGroup);
+                e.Handled = true;
+                return;
+            }
+
+            StartNewTextInput(point.X, point.Y);
+            e.Handled = true;
+            return;
+        }
+
         _selectionStart = new System.Drawing.Point((int)point.X, (int)point.Y);
         _selectionEnd = _selectionStart;
         _isDragging = true;
@@ -244,9 +292,6 @@ public sealed partial class EditScreenshotWindow : Window
                 case EditToolMode.DrawArrow:
                     DrawRedArrow(_selectionStart, _selectionEnd);
                     RemovePreview();
-                    break;
-                case EditToolMode.DrawText:
-                    DrawRedText(_currentSelection);
                     break;
             }
         }
@@ -541,17 +586,273 @@ public sealed partial class EditScreenshotWindow : Window
         DrawingCanvas.Children.Add(path);
     }
 
-    private void DrawRedText(WinRect bounds)
+    private readonly List<TextGroup> _textGroups = new();
+
+    private void StartNewTextInput(double x, double y)
     {
-        var textBlock = new TextBlock
+        var group = new TextGroup
         {
-            Text = "Text",
-            FontSize = 10,
-            Foreground = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0))
+            X = x,
+            Y = y
         };
-        Canvas.SetLeft(textBlock, bounds.X);
-        Canvas.SetTop(textBlock, bounds.Y);
-        DrawingCanvas.Children.Add(textBlock);
+        _textGroups.Add(group);
+        RenderTextGroup(group);
+        ActivateTextGroup(group);
+    }
+
+    private void ActivateTextGroup(TextGroup group)
+    {
+        DeactivateTextInput();
+
+        _activeTextGroup = group;
+        _isInTextInputMode = true;
+        group.CursorLine = group.Lines.Count - 1;
+        group.CursorColumn = group.Lines[group.CursorLine].Length;
+        UpdateCursorPosition(group);
+        StartCursorBlink();
+        RootGrid.Focus(FocusState.Programmatic);
+    }
+
+    private void DeactivateTextInput()
+    {
+        StopCursorBlink();
+
+        if (_activeTextGroup?.CursorRect != null)
+        {
+            DrawingCanvas.Children.Remove(_activeTextGroup.CursorRect);
+            _activeTextGroup.CursorRect = null;
+        }
+
+        _activeTextGroup = null;
+        _isInTextInputMode = false;
+    }
+
+    private void RenderTextGroup(TextGroup group)
+    {
+        foreach (var tb in group.TextBlocks)
+        {
+            DrawingCanvas.Children.Remove(tb);
+        }
+        group.TextBlocks.Clear();
+
+        for (int i = 0; i < group.Lines.Count; i++)
+        {
+            var textBlock = new TextBlock
+            {
+                Text = group.Lines[i],
+                FontSize = group.FontSize,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                Foreground = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0))
+            };
+            Canvas.SetLeft(textBlock, group.X);
+            Canvas.SetTop(textBlock, group.Y + i * (group.FontSize + 4));
+            DrawingCanvas.Children.Add(textBlock);
+            group.TextBlocks.Add(textBlock);
+        }
+
+        if (group.CharWidth <= 0)
+        {
+            group.CharWidth = MeasureCharWidth(group.FontSize);
+        }
+    }
+
+    private void UpdateCursorPosition(TextGroup group)
+    {
+        if (group.CursorRect != null)
+        {
+            DrawingCanvas.Children.Remove(group.CursorRect);
+            group.CursorRect = null;
+        }
+
+        string prefix = group.Lines[group.CursorLine][..group.CursorColumn];
+        double cursorX = group.X + MeasureTextWidth(prefix, group.FontSize, group.CharWidth);
+        double cursorY = group.Y + group.CursorLine * (group.FontSize + 4);
+
+        group.CursorRect = new ShapeRectangle
+        {
+            Width = group.CharWidth,
+            Height = group.FontSize + 2,
+            Fill = new SolidColorBrush(WinColor.FromArgb(100, 255, 0, 0))
+        };
+        Canvas.SetLeft(group.CursorRect, cursorX);
+        Canvas.SetTop(group.CursorRect, cursorY);
+        DrawingCanvas.Children.Add(group.CursorRect);
+        _cursorVisible = true;
+    }
+
+    private TextGroup? HitTestTextGroup(double x, double y)
+    {
+        double hitPadding = 8;
+        for (int i = _textGroups.Count - 1; i >= 0; i--)
+        {
+            var group = _textGroups[i];
+            double maxLineWidth = 0;
+            foreach (var line in group.Lines)
+            {
+                double w = MeasureTextWidth(line, group.FontSize, group.CharWidth);
+                if (w > maxLineWidth) maxLineWidth = w;
+            }
+            double totalHeight = group.Lines.Count * (group.FontSize + 4);
+
+            if (x >= group.X - hitPadding &&
+                x <= group.X + maxLineWidth + hitPadding &&
+                y >= group.Y - hitPadding &&
+                y <= group.Y + totalHeight + hitPadding)
+            {
+                int lineIdx = (int)((y - group.Y) / (group.FontSize + 4));
+                if (lineIdx < 0) lineIdx = 0;
+                if (lineIdx >= group.Lines.Count) lineIdx = group.Lines.Count - 1;
+
+                group.CursorLine = lineIdx;
+
+                double offsetX = x - group.X;
+                string lineText = group.Lines[lineIdx];
+                int col = 0;
+                for (int c = 1; c <= lineText.Length; c++)
+                {
+                    if (MeasureTextWidth(lineText[..c], group.FontSize, group.CharWidth) >= offsetX)
+                        break;
+                    col = c;
+                }
+                group.CursorColumn = col;
+
+                return group;
+            }
+        }
+        return null;
+    }
+
+    private static double MeasureTextWidth(string text, double fontSize, double charWidth)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+
+            // TextBlock.Measure collapses trailing whitespace, so strip trailing
+            // spaces and add them back arithmetically.
+            int trailSpaces = 0;
+            while (trailSpaces < text.Length && text[text.Length - 1 - trailSpaces] == ' ')
+                trailSpaces++;
+
+            double measured = 0;
+            if (trailSpaces < text.Length)
+            {
+                var tb = new TextBlock
+                {
+                    Text = text[..^trailSpaces],
+                    FontSize = fontSize,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                    TextTrimming = Microsoft.UI.Xaml.TextTrimming.None,
+                    TextWrapping = Microsoft.UI.Xaml.TextWrapping.NoWrap
+                };
+                tb.Measure(new WinSize(double.PositiveInfinity, double.PositiveInfinity));
+                measured = tb.DesiredSize.Width;
+            }
+
+            return measured + trailSpaces * charWidth;
+        }
+
+        private static double MeasureCharWidth(double fontSize)
+        {
+            // Measure a long calibration string and divide to get an accurate
+            // per-character advance. Measuring a single "W" would accumulate
+            // rounding error as text grows longer.
+            const int calibrationLength = 100;
+            var tb = new TextBlock
+            {
+                Text = new string('W', calibrationLength),
+                FontSize = fontSize,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                TextTrimming = Microsoft.UI.Xaml.TextTrimming.None,
+                TextWrapping = Microsoft.UI.Xaml.TextWrapping.NoWrap
+            };
+            tb.Measure(new WinSize(double.PositiveInfinity, double.PositiveInfinity));
+            return tb.DesiredSize.Width / calibrationLength;
+        }
+
+    private void StartCursorBlink()
+    {
+        StopCursorBlink();
+        _cursorBlinkTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(530)
+        };
+        _cursorBlinkTimer.Tick += (_, _) => ToggleCursor();
+        _cursorBlinkTimer.Start();
+    }
+
+    private void StopCursorBlink()
+    {
+        if (_cursorBlinkTimer != null)
+        {
+            _cursorBlinkTimer.Stop();
+            _cursorBlinkTimer = null;
+        }
+    }
+
+    private void ToggleCursor()
+    {
+        if (_activeTextGroup?.CursorRect == null) return;
+
+        _cursorVisible = !_cursorVisible;
+        _activeTextGroup.CursorRect.Opacity = _cursorVisible ? 1.0 : 0.0;
+    }
+
+    private void HandleTextInputCharacter(char c)
+    {
+        if (_activeTextGroup == null) return;
+
+        string line = _activeTextGroup.Lines[_activeTextGroup.CursorLine];
+        if (_activeTextGroup.CursorColumn > line.Length)
+            _activeTextGroup.CursorColumn = line.Length;
+
+        _activeTextGroup.Lines[_activeTextGroup.CursorLine] =
+            line.Insert(_activeTextGroup.CursorColumn, c.ToString());
+        _activeTextGroup.CursorColumn++;
+
+        RenderTextGroup(_activeTextGroup);
+        UpdateCursorPosition(_activeTextGroup);
+    }
+
+    private void HandleTextInputEnter()
+    {
+        if (_activeTextGroup == null) return;
+
+        string line = _activeTextGroup.Lines[_activeTextGroup.CursorLine];
+        if (_activeTextGroup.CursorColumn > line.Length)
+            _activeTextGroup.CursorColumn = line.Length;
+
+        string remainder = line[_activeTextGroup.CursorColumn..];
+        _activeTextGroup.Lines[_activeTextGroup.CursorLine] = line[.._activeTextGroup.CursorColumn];
+        _activeTextGroup.Lines.Insert(_activeTextGroup.CursorLine + 1, remainder);
+        _activeTextGroup.CursorLine++;
+        _activeTextGroup.CursorColumn = 0;
+
+        RenderTextGroup(_activeTextGroup);
+        UpdateCursorPosition(_activeTextGroup);
+    }
+
+    private void HandleTextInputBackspace()
+    {
+        if (_activeTextGroup == null) return;
+
+        if (_activeTextGroup.CursorColumn > 0)
+        {
+            string line = _activeTextGroup.Lines[_activeTextGroup.CursorLine];
+            _activeTextGroup.Lines[_activeTextGroup.CursorLine] =
+                line.Remove(_activeTextGroup.CursorColumn - 1, 1);
+            _activeTextGroup.CursorColumn--;
+        }
+        else if (_activeTextGroup.CursorLine > 0)
+        {
+            string currentLine = _activeTextGroup.Lines[_activeTextGroup.CursorLine];
+            _activeTextGroup.Lines.RemoveAt(_activeTextGroup.CursorLine);
+            _activeTextGroup.CursorLine--;
+            string prevLine = _activeTextGroup.Lines[_activeTextGroup.CursorLine];
+            _activeTextGroup.CursorColumn = prevLine.Length;
+            _activeTextGroup.Lines[_activeTextGroup.CursorLine] = prevLine + currentLine;
+        }
+
+        RenderTextGroup(_activeTextGroup);
+        UpdateCursorPosition(_activeTextGroup);
     }
 
     #endregion
@@ -585,6 +886,82 @@ public sealed partial class EditScreenshotWindow : Window
 
     private void RootGrid_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (_isInTextInputMode)
+        {
+            switch (e.Key)
+            {
+                case WinVirtualKey.Escape:
+                    DeactivateTextInput();
+                    e.Handled = true;
+                    return;
+
+                case WinVirtualKey.Enter:
+                    HandleTextInputEnter();
+                    e.Handled = true;
+                    return;
+
+                case WinVirtualKey.Back:
+                    HandleTextInputBackspace();
+                    e.Handled = true;
+                    return;
+
+                case WinVirtualKey.Space:
+                    HandleTextInputCharacter(' ');
+                    e.Handled = true;
+                    return;
+
+                case WinVirtualKey.Left:
+                    if (_activeTextGroup != null && _activeTextGroup.CursorColumn > 0)
+                    {
+                        _activeTextGroup.CursorColumn--;
+                        UpdateCursorPosition(_activeTextGroup);
+                    }
+                    e.Handled = true;
+                    return;
+
+                case WinVirtualKey.Right:
+                    if (_activeTextGroup != null)
+                    {
+                        string line = _activeTextGroup.Lines[_activeTextGroup.CursorLine];
+                        if (_activeTextGroup.CursorColumn < line.Length)
+                        {
+                            _activeTextGroup.CursorColumn++;
+                            UpdateCursorPosition(_activeTextGroup);
+                        }
+                    }
+                    e.Handled = true;
+                    return;
+
+                case WinVirtualKey.Up:
+                    if (_activeTextGroup != null && _activeTextGroup.CursorLine > 0)
+                    {
+                        _activeTextGroup.CursorLine--;
+                        string line = _activeTextGroup.Lines[_activeTextGroup.CursorLine];
+                        if (_activeTextGroup.CursorColumn > line.Length)
+                            _activeTextGroup.CursorColumn = line.Length;
+                        UpdateCursorPosition(_activeTextGroup);
+                    }
+                    e.Handled = true;
+                    return;
+
+                case WinVirtualKey.Down:
+                    if (_activeTextGroup != null && _activeTextGroup.CursorLine < _activeTextGroup.Lines.Count - 1)
+                    {
+                        _activeTextGroup.CursorLine++;
+                        string line = _activeTextGroup.Lines[_activeTextGroup.CursorLine];
+                        if (_activeTextGroup.CursorColumn > line.Length)
+                            _activeTextGroup.CursorColumn = line.Length;
+                        UpdateCursorPosition(_activeTextGroup);
+                    }
+                    e.Handled = true;
+                    return;
+
+                case WinVirtualKey.Tab:
+                    e.Handled = true;
+                    return;
+            }
+        }
+
         switch (e.Key)
         {
             case WinVirtualKey.Escape:
@@ -607,6 +984,15 @@ public sealed partial class EditScreenshotWindow : Window
                     _ = SaveSelectionAsync();
                 }
                 break;
+        }
+    }
+
+    private void RootGrid_CharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs args)
+    {
+        if (_isInTextInputMode && !char.IsControl(args.Character))
+        {
+            HandleTextInputCharacter(args.Character);
+            args.Handled = true;
         }
     }
 

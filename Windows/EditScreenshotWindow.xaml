@@ -8,7 +8,7 @@
     mc:Ignorable="d"
     Title="Edit Screenshot">
 
-    <Grid x:Name="RootGrid"
+	<Grid x:Name="RootGrid"
           IsTabStop="True"
           Loaded="RootGrid_Loaded"
           PointerPressed="RootGrid_PointerPressed"
@@ -17,17 +17,17 @@
           DoubleTapped="RootGrid_DoubleTapped"
           KeyDown="RootGrid_KeyDown"
           CharacterReceived="RootGrid_CharacterReceived">
-        <Grid.Resources>
-            <Style x:Key="SubtleToggleButtonStyle" TargetType="ToggleButton">
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="Padding" Value="8,4" />
-                <Setter Property="CornerRadius" Value="4" />
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="ToggleButton">
-                            <ContentPresenter x:Name="ContentPresenter"
+		<Grid.Resources>
+			<Style x:Key="SubtleToggleButtonStyle" TargetType="ToggleButton">
+				<Setter Property="Background" Value="Transparent" />
+				<Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+				<Setter Property="BorderThickness" Value="0" />
+				<Setter Property="Padding" Value="8,4" />
+				<Setter Property="CornerRadius" Value="4" />
+				<Setter Property="Template">
+					<Setter.Value>
+						<ControlTemplate TargetType="ToggleButton">
+							<ContentPresenter x:Name="ContentPresenter"
                                               Background="{TemplateBinding Background}"
                                               BorderBrush="{TemplateBinding BorderBrush}"
                                               BorderThickness="{TemplateBinding BorderThickness}"
@@ -36,79 +36,79 @@
                                               HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                                               VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                                               AutomationProperties.AccessibilityView="Raw">
-                                <VisualStateManager.VisualStateGroups>
-                                    <VisualStateGroup x:Name="CommonStates">
-                                        <VisualState x:Name="Normal" />
-                                        <VisualState x:Name="PointerOver">
-                                            <Storyboard>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                            </Storyboard>
-                                        </VisualState>
-                                        <VisualState x:Name="Pressed">
-                                            <Storyboard>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                            </Storyboard>
-                                        </VisualState>
-                                        <VisualState x:Name="Disabled">
-                                            <Storyboard>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Opacity">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="0.38" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                            </Storyboard>
-                                        </VisualState>
-                                        <VisualState x:Name="Checked">
-                                            <Storyboard>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                            </Storyboard>
-                                        </VisualState>
-                                        <VisualState x:Name="CheckedPointerOver">
-                                            <Storyboard>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorSecondaryBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                            </Storyboard>
-                                        </VisualState>
-                                        <VisualState x:Name="CheckedPressed">
-                                            <Storyboard>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorTertiaryBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorSecondaryBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                            </Storyboard>
-                                        </VisualState>
-                                    </VisualStateGroup>
-                                </VisualStateManager.VisualStateGroups>
-                            </ContentPresenter>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-        </Grid.Resources>
-        <Image
+								<VisualStateManager.VisualStateGroups>
+									<VisualStateGroup x:Name="CommonStates">
+										<VisualState x:Name="Normal" />
+										<VisualState x:Name="PointerOver">
+											<Storyboard>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+												</ObjectAnimationUsingKeyFrames>
+											</Storyboard>
+										</VisualState>
+										<VisualState x:Name="Pressed">
+											<Storyboard>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+												</ObjectAnimationUsingKeyFrames>
+											</Storyboard>
+										</VisualState>
+										<VisualState x:Name="Disabled">
+											<Storyboard>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Opacity">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="0.38" />
+												</ObjectAnimationUsingKeyFrames>
+											</Storyboard>
+										</VisualState>
+										<VisualState x:Name="Checked">
+											<Storyboard>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+												</ObjectAnimationUsingKeyFrames>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+												</ObjectAnimationUsingKeyFrames>
+											</Storyboard>
+										</VisualState>
+										<VisualState x:Name="CheckedPointerOver">
+											<Storyboard>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorSecondaryBrush}" />
+												</ObjectAnimationUsingKeyFrames>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+												</ObjectAnimationUsingKeyFrames>
+											</Storyboard>
+										</VisualState>
+										<VisualState x:Name="CheckedPressed">
+											<Storyboard>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorTertiaryBrush}" />
+												</ObjectAnimationUsingKeyFrames>
+												<ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+													<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorSecondaryBrush}" />
+												</ObjectAnimationUsingKeyFrames>
+											</Storyboard>
+										</VisualState>
+									</VisualStateGroup>
+								</VisualStateManager.VisualStateGroups>
+							</ContentPresenter>
+						</ControlTemplate>
+					</Setter.Value>
+				</Setter>
+			</Style>
+		</Grid.Resources>
+		<Image
             x:Name="ScreenshotImage"
             Stretch="UniformToFill"
             HorizontalAlignment="Center"
             VerticalAlignment="Center" />
 
-        <Canvas x:Name="TintCanvas" />
+		<Canvas x:Name="TintCanvas" />
 
-        <Canvas x:Name="DrawingCanvas" />
+		<Canvas x:Name="DrawingCanvas" />
 
-        <Border
+		<Border
             x:Name="ToolbarBorder"
             Background="#E8303030"
             CornerRadius="8"
@@ -119,8 +119,8 @@
             BorderBrush="#40FFFFFF"
             BorderThickness="1">
 
-            <StackPanel x:Name="ToolbarPanel" Orientation="Horizontal" Spacing="2">
-                <StackPanel
+			<StackPanel x:Name="ToolbarPanel" Orientation="Horizontal" Spacing="2">
+				<StackPanel
                     x:Name="GripIcon"
                     Orientation="Vertical"
                     Spacing="2"
@@ -130,89 +130,89 @@
                     PointerPressed="GripIcon_PointerPressed"
                     PointerMoved="GripIcon_PointerMoved"
                     PointerReleased="GripIcon_PointerReleased">
-                    <Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
-                    <Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
-                    <Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
-                </StackPanel>
+					<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
+					<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
+					<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
+				</StackPanel>
 
-                <ToggleButton
+				<ToggleButton
                     x:Name="SelectToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Select"
                     IsChecked="True"
                     Click="SelectToolButton_Click">
-                    <FontIcon Glyph="&#xE924;" FontSize="16" />
-                </ToggleButton>
+					<FontIcon Glyph="&#xE924;" FontSize="16" />
+				</ToggleButton>
 
-                <ToggleButton
+				<ToggleButton
                     x:Name="DrawBoxToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Draw Box"
                     Click="DrawBoxToolButton_Click">
-                    <FontIcon Glyph="&#xE739;" FontSize="16" />
-                </ToggleButton>
+					<FontIcon Glyph="&#xE739;" FontSize="16" />
+				</ToggleButton>
 
-                <ToggleButton
+				<ToggleButton
                     x:Name="DrawArrowToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Draw Arrow"
                     Click="DrawArrowToolButton_Click">
-                    <FontIcon Glyph="&#xE741;" FontSize="16" />
-                </ToggleButton>
+					<FontIcon Glyph="&#xE741;" FontSize="16" />
+				</ToggleButton>
 
-                <ToggleButton
+				<ToggleButton
                     x:Name="DrawTextToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Draw Text"
                     Click="DrawTextToolButton_Click">
-                    <FontIcon Glyph="&#xF7B5;" FontSize="16" />
-                </ToggleButton>
+					<FontIcon Glyph="&#xF7B5;" FontSize="16" />
+				</ToggleButton>
 
-                <ToggleButton
+				<ToggleButton
                     x:Name="BlurToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Blur"
                     Click="BlurToolButton_Click">
-                    <FontIcon Glyph="&#xED61;" FontSize="16" />
-                </ToggleButton>
+					<FontIcon Glyph="&#xED61;" FontSize="16" />
+				</ToggleButton>
 
-                <Border
+				<Border
                     Width="1"
                     Background="#40FFFFFF"
                     Margin="4,4" />
 
-                <Button
+				<Button
                     x:Name="CopyButton"
                     Style="{StaticResource SubtleButtonStyle}"
                     ToolTipService.ToolTip="Copy"
                     Click="CopyButton_Click">
-                    <FontIcon Glyph="&#xE8C8;" FontSize="16" />
-                </Button>
+					<FontIcon Glyph="&#xE8C8;" FontSize="16" />
+				</Button>
 
-                <Button
+				<Button
                     x:Name="CopyTextButton"
                     Style="{StaticResource SubtleButtonStyle}"
                     ToolTipService.ToolTip="Copy Text"
                     Click="CopyTextButton_Click">
-                    <FontIcon Glyph="&#xE8AC;" FontSize="16" />
-                </Button>
+					<FontIcon Glyph="&#xE8AC;" FontSize="16" />
+				</Button>
 
-                <Button
+				<Button
                     x:Name="SaveButton"
                     Style="{StaticResource SubtleButtonStyle}"
                     ToolTipService.ToolTip="Save"
                     Click="SaveButton_Click">
-                    <FontIcon Glyph="&#xE74E;" FontSize="16" />
-                </Button>
+					<FontIcon Glyph="&#xE74E;" FontSize="16" />
+				</Button>
 
-                <Button
+				<Button
                     x:Name="CancelButton"
                     Style="{StaticResource SubtleButtonStyle}"
                     ToolTipService.ToolTip="Cancel"
                     Click="CancelButton_Click">
-                    <FontIcon Glyph="&#xE711;" FontSize="16" />
-                </Button>
-            </StackPanel>
-        </Border>
-    </Grid>
+					<FontIcon Glyph="&#xE711;" FontSize="16" />
+				</Button>
+			</StackPanel>
+		</Border>
+	</Grid>
 </Window>

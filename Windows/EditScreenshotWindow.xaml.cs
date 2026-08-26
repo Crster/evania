@@ -57,9 +57,20 @@ public sealed partial class EditScreenshotWindow : Window
     private WinRect _currentSelection;
     private bool _hasSelection;
 
+    // Blur-specific selection state (independent from Select tool)
+    private System.Drawing.Point _blurSelectionStart;
+    private System.Drawing.Point _blurSelectionEnd;
+    private WinRect _blurSelection;
+    private bool _hasBlurSelection;
+
+    // Draw-specific drag state (independent from Select selection)
+    private System.Drawing.Point _drawStart;
+    private System.Drawing.Point _drawEnd;
+
     // Re-usable preview shapes to avoid per-move allocation and layout churn.
     private ShapeRectangle? _previewBox;
     private ShapePath? _previewArrow;
+    private ShapeRectangle? _previewBlur;
 
     public bool IsCancelled { get; private set; }
 
@@ -84,7 +95,7 @@ public sealed partial class EditScreenshotWindow : Window
 
         RootGrid.Focus(FocusState.Programmatic);
 
-                UpdateToolButtonStyles();
+        UpdateToolButtonStyles();
     }
 
     private void RootGrid_Loaded(object sender, RoutedEventArgs e)
@@ -141,6 +152,21 @@ public sealed partial class EditScreenshotWindow : Window
         GripIcon.ReleasePointerCapture(e.Pointer);
     }
 
+    private bool IsPointerOverToolbar(object originalSource)
+    {
+        if (originalSource is FrameworkElement fe)
+        {
+            var parent = fe.Parent;
+            while (parent != null)
+            {
+                if (parent == ToolbarBorder)
+                    return true;
+                parent = (parent as FrameworkElement)?.Parent;
+            }
+        }
+        return false;
+    }
+
     #endregion
 
     #region Tool Selection
@@ -150,6 +176,7 @@ public sealed partial class EditScreenshotWindow : Window
         DeactivateTextInput();
         _currentTool = EditToolMode.Select;
         UpdateToolButtonStyles();
+        UpdateTintOverlay();
     }
 
     private void DrawBoxToolButton_Click(object sender, RoutedEventArgs e)
@@ -157,6 +184,7 @@ public sealed partial class EditScreenshotWindow : Window
         DeactivateTextInput();
         _currentTool = EditToolMode.DrawBox;
         UpdateToolButtonStyles();
+        UpdateTintOverlay();
     }
 
     private void DrawArrowToolButton_Click(object sender, RoutedEventArgs e)
@@ -164,12 +192,14 @@ public sealed partial class EditScreenshotWindow : Window
         DeactivateTextInput();
         _currentTool = EditToolMode.DrawArrow;
         UpdateToolButtonStyles();
+        UpdateTintOverlay();
     }
 
     private void DrawTextToolButton_Click(object sender, RoutedEventArgs e)
     {
         _currentTool = EditToolMode.DrawText;
         UpdateToolButtonStyles();
+        UpdateTintOverlay();
     }
 
     private void BlurToolButton_Click(object sender, RoutedEventArgs e)
@@ -177,6 +207,7 @@ public sealed partial class EditScreenshotWindow : Window
         DeactivateTextInput();
         _currentTool = EditToolMode.Blur;
         UpdateToolButtonStyles();
+        UpdateTintOverlay();
     }
 
     private void UpdateToolButtonStyles()
@@ -199,6 +230,12 @@ public sealed partial class EditScreenshotWindow : Window
             return;
         }
 
+        // Ignore presses that originate from the toolbar (buttons, grip, etc.)
+        if (IsPointerOverToolbar(e.OriginalSource))
+        {
+            return;
+        }
+
         var point = e.GetCurrentPoint(RootGrid).Position;
 
         if (_currentTool == EditToolMode.DrawText)
@@ -216,8 +253,21 @@ public sealed partial class EditScreenshotWindow : Window
             return;
         }
 
-        _selectionStart = new System.Drawing.Point((int)point.X, (int)point.Y);
-        _selectionEnd = _selectionStart;
+        if (_currentTool == EditToolMode.Blur)
+        {
+            _blurSelectionStart = new System.Drawing.Point((int)point.X, (int)point.Y);
+            _blurSelectionEnd = _blurSelectionStart;
+        }
+        else if (_currentTool == EditToolMode.Select)
+        {
+            _selectionStart = new System.Drawing.Point((int)point.X, (int)point.Y);
+            _selectionEnd = _selectionStart;
+        }
+        else
+        {
+            _drawStart = new System.Drawing.Point((int)point.X, (int)point.Y);
+            _drawEnd = _drawStart;
+        }
         _isDragging = true;
 
         RootGrid.CapturePointer(e.Pointer);
@@ -228,7 +278,11 @@ public sealed partial class EditScreenshotWindow : Window
         }
         else if (_currentTool == EditToolMode.DrawArrow)
         {
-            EnsureArrowPreview(_selectionStart.X, _selectionStart.Y);
+            EnsureArrowPreview(_drawStart.X, _drawStart.Y);
+        }
+        else if (_currentTool == EditToolMode.Blur)
+        {
+            EnsureBlurPreview();
         }
     }
 
@@ -240,7 +294,19 @@ public sealed partial class EditScreenshotWindow : Window
         }
 
         var point = e.GetCurrentPoint(RootGrid).Position;
-        _selectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+
+        if (_currentTool == EditToolMode.Blur)
+        {
+            _blurSelectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+        }
+        else if (_currentTool == EditToolMode.Select)
+        {
+            _selectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+        }
+        else
+        {
+            _drawEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+        }
 
         if (_currentTool == EditToolMode.DrawBox)
         {
@@ -250,7 +316,11 @@ public sealed partial class EditScreenshotWindow : Window
         {
             UpdateArrowPreview(point.X, point.Y);
         }
-        else if (_currentTool == EditToolMode.Select || _currentTool == EditToolMode.Blur)
+        else if (_currentTool == EditToolMode.Blur)
+        {
+            UpdateBlurPreview(point.X, point.Y);
+        }
+        else if (_currentTool == EditToolMode.Select)
         {
             UpdateTintOverlay();
         }
@@ -267,38 +337,87 @@ public sealed partial class EditScreenshotWindow : Window
         RootGrid.ReleasePointerCapture(e.Pointer);
 
         var point = e.GetCurrentPoint(RootGrid).Position;
-        _selectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
 
-        int x = Math.Min(_selectionStart.X, _selectionEnd.X);
-        int y = Math.Min(_selectionStart.Y, _selectionEnd.Y);
-        int w = Math.Abs(_selectionEnd.X - _selectionStart.X);
-        int h = Math.Abs(_selectionEnd.Y - _selectionStart.Y);
-
-        if (w > 5 || h > 5)
+        if (_currentTool == EditToolMode.Blur)
         {
-            _hasSelection = true;
-            _currentSelection = new WinRect(x, y, w, h);
+            _blurSelectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
 
-            switch (_currentTool)
+            int x = Math.Min(_blurSelectionStart.X, _blurSelectionEnd.X);
+            int y = Math.Min(_blurSelectionStart.Y, _blurSelectionEnd.Y);
+            int w = Math.Abs(_blurSelectionEnd.X - _blurSelectionStart.X);
+            int h = Math.Abs(_blurSelectionEnd.Y - _blurSelectionStart.Y);
+
+            if (w > 5 || h > 5)
             {
-                case EditToolMode.Select:
-                case EditToolMode.Blur:
-                    UpdateTintOverlay();
-                    break;
-                case EditToolMode.DrawBox:
-                    DrawRedBox(_currentSelection);
-                    RemovePreview();
-                    break;
-                case EditToolMode.DrawArrow:
-                    DrawRedArrow(_selectionStart, _selectionEnd);
-                    RemovePreview();
-                    break;
+                RemoveBlurPreview();
+                _blurSelection = new WinRect(x, y, w, h);
+                ApplyBlur(_blurSelection);
+                _hasBlurSelection = false;
+                UpdateTintOverlay();
+            }
+            else
+            {
+                RemoveBlurPreview();
+            }
+
+            return;
+        }
+
+        if (_currentTool == EditToolMode.Select)
+        {
+            _selectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+
+            int sx = Math.Min(_selectionStart.X, _selectionEnd.X);
+            int sy = Math.Min(_selectionStart.Y, _selectionEnd.Y);
+            int sw = Math.Abs(_selectionEnd.X - _selectionStart.X);
+            int sh = Math.Abs(_selectionEnd.Y - _selectionStart.Y);
+
+            if (sw > 5 || sh > 5)
+            {
+                _hasSelection = true;
+                _currentSelection = new WinRect(sx, sy, sw, sh);
+                UpdateTintOverlay();
+            }
+            else
+            {
+                RemovePreview();
             }
         }
-        else
+        else if (_currentTool == EditToolMode.DrawBox)
         {
-            // Drag was too small to commit; drop any leftover preview shape.
-            RemovePreview();
+            _drawEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+
+            int sx = Math.Min(_drawStart.X, _drawEnd.X);
+            int sy = Math.Min(_drawStart.Y, _drawEnd.Y);
+            int sw = Math.Abs(_drawEnd.X - _drawStart.X);
+            int sh = Math.Abs(_drawEnd.Y - _drawStart.Y);
+
+            if (sw > 5 || sh > 5)
+            {
+                DrawRedBox(new WinRect(sx, sy, sw, sh));
+                RemovePreview();
+            }
+            else
+            {
+                RemovePreview();
+            }
+        }
+        else if (_currentTool == EditToolMode.DrawArrow)
+        {
+            _drawEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+
+            int dx = Math.Abs(_drawEnd.X - _drawStart.X);
+            int dy = Math.Abs(_drawEnd.Y - _drawStart.Y);
+
+            if (dx > 5 || dy > 5)
+            {
+                DrawRedArrow(_drawStart, _drawEnd);
+                RemovePreview();
+            }
+            else
+            {
+                RemovePreview();
+            }
         }
     }
 
@@ -306,6 +425,10 @@ public sealed partial class EditScreenshotWindow : Window
     {
         if (_currentTool == EditToolMode.Select)
         {
+            // Cancel the drag that PointerPressed started on the second tap.
+            _isDragging = false;
+            RootGrid.ReleasePointerCaptures();
+
             double width = RootGrid.ActualWidth;
             double height = RootGrid.ActualHeight;
             _hasSelection = true;
@@ -322,56 +445,93 @@ public sealed partial class EditScreenshotWindow : Window
     {
         TintCanvas.Children.Clear();
 
-        if (!_hasSelection && !_isDragging)
+        bool isBlur = _currentTool == EditToolMode.Blur;
+
+        // The Select selection always takes priority for the tint hole.
+        // Blur only gets a hole when there is no Select selection.
+        WinRect? holeRect = null;
+        bool holeIsBlur = false;
+
+        if (!isBlur && _isDragging)
+        {
+            // Live drag preview always takes priority.
+            int sx = _selectionStart.X;
+            int sy = _selectionStart.Y;
+            int ex = _selectionEnd.X;
+            int ey = _selectionEnd.Y;
+            int x = Math.Min(sx, ex);
+            int y = Math.Min(sy, ey);
+            int w = Math.Abs(ex - sx);
+            int h = Math.Abs(ey - sy);
+            holeRect = new WinRect(x, y, w, h);
+        }
+        else if (_hasSelection)
+        {
+            holeRect = _currentSelection;
+        }
+        else if (isBlur && _isDragging)
+        {
+            int sx = _blurSelectionStart.X;
+            int sy = _blurSelectionStart.Y;
+            int ex = _blurSelectionEnd.X;
+            int ey = _blurSelectionEnd.Y;
+            int x = Math.Min(sx, ex);
+            int y = Math.Min(sy, ey);
+            int w = Math.Abs(ex - sx);
+            int h = Math.Abs(ey - sy);
+            holeRect = new WinRect(x, y, w, h);
+            holeIsBlur = true;
+        }
+        else if (isBlur && _hasBlurSelection)
+        {
+            holeRect = _blurSelection;
+            holeIsBlur = true;
+        }
+
+        if (holeRect == null)
         {
             AddTintRect(0, 0, RootGrid.ActualWidth, RootGrid.ActualHeight);
+            DrawSelectionBorder(_hasSelection, _currentSelection, dashed: true);
+            DrawSelectionBorder(_hasBlurSelection, _blurSelection, dashed: false);
             return;
         }
 
-        WinRect sel;
-        if (_isDragging)
-        {
-            int x = Math.Min(_selectionStart.X, _selectionEnd.X);
-            int y = Math.Min(_selectionStart.Y, _selectionEnd.Y);
-            int w = Math.Abs(_selectionEnd.X - _selectionStart.X);
-            int h = Math.Abs(_selectionEnd.Y - _selectionStart.Y);
-            sel = new WinRect(x, y, w, h);
-        }
-        else
-        {
-            sel = _currentSelection;
-        }
-
+        var sel = holeRect.Value;
         double canvasW = RootGrid.ActualWidth;
         double canvasH = RootGrid.ActualHeight;
 
         if (sel.Y > 0)
-        {
             AddTintRect(0, 0, canvasW, sel.Y);
-        }
         if (sel.Y + sel.Height < canvasH)
-        {
             AddTintRect(0, sel.Y + sel.Height, canvasW, canvasH - sel.Y - sel.Height);
-        }
         if (sel.X > 0)
-        {
             AddTintRect(0, sel.Y, sel.X, sel.Height);
-        }
         if (sel.X + sel.Width < canvasW)
-        {
             AddTintRect(sel.X + sel.Width, sel.Y, canvasW - sel.X - sel.Width, sel.Height);
-        }
+
+        DrawSelectionBorder(true, sel, dashed: holeIsBlur ? false : true);
+
+        // Also draw the other selection border if it exists and isn't the hole.
+        if (!holeIsBlur && _hasBlurSelection)
+            DrawSelectionBorder(true, _blurSelection, dashed: false);
+        else if (holeIsBlur && _hasSelection)
+            DrawSelectionBorder(true, _currentSelection, dashed: true);
+    }
+
+    private void DrawSelectionBorder(bool hasSelection, WinRect rect, bool dashed)
+    {
+        if (!hasSelection) return;
 
         var border = new ShapeRectangle
         {
-            Width = sel.Width,
-            Height = sel.Height,
+            Width = rect.Width,
+            Height = rect.Height,
             Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 255, 255)),
             StrokeThickness = 1,
-            StrokeDashArray = new DoubleCollection { 4, 4 }
+            StrokeDashArray = dashed ? new DoubleCollection { 4, 4 } : null
         };
-        Canvas.SetLeft(border, sel.X);
-        Canvas.SetTop(border, sel.Y);
+        Canvas.SetLeft(border, rect.X);
+        Canvas.SetTop(border, rect.Y);
         TintCanvas.Children.Add(border);
     }
 
@@ -397,169 +557,208 @@ public sealed partial class EditScreenshotWindow : Window
 
     #region Drawing Tools
 
-        private void EnsureDrawBoxPreview()
+    private void EnsureDrawBoxPreview()
+    {
+        if (_previewBox != null)
         {
-            if (_previewBox != null)
-            {
-                return;
-            }
-
-            _previewBox = new ShapeRectangle
-            {
-                Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0)),
-                StrokeThickness = 2
-            };
-            DrawingCanvas.Children.Add(_previewBox);
+            return;
         }
 
-        private void UpdateDrawBoxPreview(double endX, double endY)
+        _previewBox = new ShapeRectangle
         {
-            if (_previewBox == null)
-            {
-                return;
-            }
+            Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0)),
+            StrokeThickness = 2
+        };
+        DrawingCanvas.Children.Add(_previewBox);
+    }
 
-            int x = Math.Min(_selectionStart.X, (int)endX);
-            int y = Math.Min(_selectionStart.Y, (int)endY);
-            int w = Math.Abs((int)endX - _selectionStart.X);
-            int h = Math.Abs((int)endY - _selectionStart.Y);
-
-            _previewBox.Width = w;
-            _previewBox.Height = h;
-            Canvas.SetLeft(_previewBox, x);
-            Canvas.SetTop(_previewBox, y);
+    private void UpdateDrawBoxPreview(double endX, double endY)
+    {
+        if (_previewBox == null)
+        {
+            return;
         }
 
-        private void EnsureArrowPreview(double startX, double startY)
+        int x = Math.Min(_drawStart.X, (int)endX);
+        int y = Math.Min(_drawStart.Y, (int)endY);
+        int w = Math.Abs((int)endX - _drawStart.X);
+        int h = Math.Abs((int)endY - _drawStart.Y);
+
+        _previewBox.Width = w;
+        _previewBox.Height = h;
+        Canvas.SetLeft(_previewBox, x);
+        Canvas.SetTop(_previewBox, y);
+    }
+
+    private void EnsureArrowPreview(double startX, double startY)
+    {
+        if (_previewArrow != null)
         {
-            if (_previewArrow != null)
-            {
-                return;
-            }
-
-            // A single Path draws both the shaft and the head, so the two can never
-            // de-sync or tear while dragging (the source of the earlier flicker).
-            _previewArrow = new ShapePath
-            {
-                Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0)),
-                StrokeThickness = 2,
-                StrokeStartLineCap = PenLineCap.Round,
-                StrokeEndLineCap = PenLineCap.Round,
-                Fill = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0))
-            };
-            DrawingCanvas.Children.Add(_previewArrow);
-
-            // On the very first click show only a small arrowhead at the click point
-            // oriented toward the center of the grid — no shaft yet.
-            double centerX = RootGrid.ActualWidth / 2.0;
-            double centerY = RootGrid.ActualHeight / 2.0;
-            double angle = Math.Atan2(centerY - startY, centerX - startX);
-            _previewArrow.Data = BuildHeadOnlyGeometry(startX, startY, angle);
+            return;
         }
 
-        /// <summary>Arrowhead triangle only (no shaft), used for the initial click preview.</summary>
-        private static Geometry BuildHeadOnlyGeometry(double tipX, double tipY, double angle)
+        // A single Path draws both the shaft and the head, so the two can never
+        // de-sync or tear while dragging (the source of the earlier flicker).
+        _previewArrow = new ShapePath
         {
-            const double headLength = 12;
-            const double headHalfWidth = 5;
+            Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0)),
+            StrokeThickness = 2,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            Fill = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0))
+        };
+        DrawingCanvas.Children.Add(_previewArrow);
 
-            double baseX = tipX - headLength * Math.Cos(angle);
-            double baseY = tipY - headLength * Math.Sin(angle);
-            double b1x = baseX + headHalfWidth * Math.Cos(angle + Math.PI / 2);
-            double b1y = baseY + headHalfWidth * Math.Sin(angle + Math.PI / 2);
-            double b2x = baseX - headHalfWidth * Math.Cos(angle + Math.PI / 2);
-            double b2y = baseY - headHalfWidth * Math.Sin(angle + Math.PI / 2);
+        // On the very first click show only a small arrowhead at the click point
+        // oriented toward the center of the grid — no shaft yet.
+        double centerX = RootGrid.ActualWidth / 2.0;
+        double centerY = RootGrid.ActualHeight / 2.0;
+        double angle = Math.Atan2(centerY - startY, centerX - startX);
+        _previewArrow.Data = BuildHeadOnlyGeometry(startX, startY, angle);
+    }
 
-            var geometry = new PathGeometry();
-            var headFigure = new PathFigure
-            {
-                StartPoint = new WinPoint(tipX, tipY),
-                IsClosed = true,
-                IsFilled = true
-            };
-            headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b1x, b1y) });
-            headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b2x, b2y) });
-            geometry.Figures.Add(headFigure);
+    /// <summary>Arrowhead triangle only (no shaft), used for the initial click preview.</summary>
+    private static Geometry BuildHeadOnlyGeometry(double tipX, double tipY, double angle)
+    {
+        const double headLength = 12;
+        const double headHalfWidth = 5;
 
-            return geometry;
+        double baseX = tipX - headLength * Math.Cos(angle);
+        double baseY = tipY - headLength * Math.Sin(angle);
+        double b1x = baseX + headHalfWidth * Math.Cos(angle + Math.PI / 2);
+        double b1y = baseY + headHalfWidth * Math.Sin(angle + Math.PI / 2);
+        double b2x = baseX - headHalfWidth * Math.Cos(angle + Math.PI / 2);
+        double b2y = baseY - headHalfWidth * Math.Sin(angle + Math.PI / 2);
+
+        var geometry = new PathGeometry();
+        var headFigure = new PathFigure
+        {
+            StartPoint = new WinPoint(tipX, tipY),
+            IsClosed = true,
+            IsFilled = true
+        };
+        headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b1x, b1y) });
+        headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b2x, b2y) });
+        geometry.Figures.Add(headFigure);
+
+        return geometry;
+    }
+
+    private static Geometry BuildArrowGeometry(double startX, double startY, double endX, double endY)
+    {
+        const double headLength = 12;
+        const double headHalfWidth = 5;
+        double angle = Math.Atan2(endY - startY, endX - startX);
+
+        double tipX = endX;
+        double tipY = endY;
+        double baseX = endX - headLength * Math.Cos(angle);
+        double baseY = endY - headLength * Math.Sin(angle);
+        double b1x = baseX + headHalfWidth * Math.Cos(angle + Math.PI / 2);
+        double b1y = baseY + headHalfWidth * Math.Sin(angle + Math.PI / 2);
+        double b2x = baseX - headHalfWidth * Math.Cos(angle + Math.PI / 2);
+        double b2y = baseY - headHalfWidth * Math.Sin(angle + Math.PI / 2);
+
+        var geometry = new PathGeometry();
+
+        var shaftFigure = new PathFigure
+        {
+            StartPoint = new WinPoint(startX, startY),
+            IsClosed = false
+        };
+        shaftFigure.Segments.Add(new LineSegment
+        {
+            Point = new WinPoint(baseX, baseY)
+        });
+        geometry.Figures.Add(shaftFigure);
+
+        var headFigure = new PathFigure
+        {
+            StartPoint = new WinPoint(tipX, tipY),
+            IsClosed = true,
+            IsFilled = true
+        };
+        headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b1x, b1y) });
+        headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b2x, b2y) });
+        geometry.Figures.Add(headFigure);
+
+        return geometry;
+    }
+
+    private void UpdateArrowPreview(double endX, double endY)
+    {
+        if (_previewArrow == null)
+        {
+            return;
         }
 
-        private static Geometry BuildArrowGeometry(double startX, double startY, double endX, double endY)
+        // Don't update if the cursor hasn't meaningfully moved from the press
+        // point — preserves the initial center-oriented arrowhead and avoids
+        // a zero-length arrow snapping to the right due to Atan2(0,0) = 0.
+        if (Math.Abs(endX - _drawStart.X) < 3 && Math.Abs(endY - _drawStart.Y) < 3)
         {
-            const double headLength = 12;
-            const double headHalfWidth = 5;
-            double angle = Math.Atan2(endY - startY, endX - startX);
-
-            double tipX = endX;
-            double tipY = endY;
-            double baseX = endX - headLength * Math.Cos(angle);
-            double baseY = endY - headLength * Math.Sin(angle);
-            double b1x = baseX + headHalfWidth * Math.Cos(angle + Math.PI / 2);
-            double b1y = baseY + headHalfWidth * Math.Sin(angle + Math.PI / 2);
-            double b2x = baseX - headHalfWidth * Math.Cos(angle + Math.PI / 2);
-            double b2y = baseY - headHalfWidth * Math.Sin(angle + Math.PI / 2);
-
-            var geometry = new PathGeometry();
-
-            var shaftFigure = new PathFigure
-            {
-                StartPoint = new WinPoint(startX, startY),
-                IsClosed = false
-            };
-            shaftFigure.Segments.Add(new LineSegment
-            {
-                Point = new WinPoint(baseX, baseY)
-            });
-            geometry.Figures.Add(shaftFigure);
-
-            var headFigure = new PathFigure
-            {
-                StartPoint = new WinPoint(tipX, tipY),
-                IsClosed = true,
-                IsFilled = true
-            };
-            headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b1x, b1y) });
-            headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b2x, b2y) });
-            geometry.Figures.Add(headFigure);
-
-            return geometry;
+            return;
         }
 
-        private void UpdateArrowPreview(double endX, double endY)
+        // Replace the geometry as a single unit each frame; no per-element mutation.
+        _previewArrow.Data = BuildArrowGeometry(_drawStart.X, _drawStart.Y, endX, endY);
+    }
+
+    private void RemovePreview()
+    {
+        if (_previewBox != null)
         {
-            if (_previewArrow == null)
-            {
-                return;
-            }
-
-            // Don't update if the cursor hasn't meaningfully moved from the press
-            // point — preserves the initial center-oriented arrowhead and avoids
-            // a zero-length arrow snapping to the right due to Atan2(0,0) = 0.
-            if (Math.Abs(endX - _selectionStart.X) < 3 && Math.Abs(endY - _selectionStart.Y) < 3)
-            {
-                return;
-            }
-
-            // Replace the geometry as a single unit each frame; no per-element mutation.
-            _previewArrow.Data = BuildArrowGeometry(_selectionStart.X, _selectionStart.Y, endX, endY);
+            DrawingCanvas.Children.Remove(_previewBox);
+            _previewBox = null;
         }
-
-        private void RemovePreview()
+        if (_previewArrow != null)
         {
-            if (_previewBox != null)
-            {
-                DrawingCanvas.Children.Remove(_previewBox);
-                _previewBox = null;
-            }
-            if (_previewArrow != null)
-            {
-                DrawingCanvas.Children.Remove(_previewArrow);
-                _previewArrow = null;
-            }
+            DrawingCanvas.Children.Remove(_previewArrow);
+            _previewArrow = null;
         }
+    }
 
-        private void DrawRedBox(WinRect bounds)
+    private void EnsureBlurPreview()
+    {
+        if (_previewBlur != null)
+            return;
+
+        _previewBlur = new ShapeRectangle
         {
+            Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 255, 255)),
+            StrokeThickness = 1,
+            Fill = new SolidColorBrush(WinColor.FromArgb(60, 255, 255, 255))
+        };
+        DrawingCanvas.Children.Add(_previewBlur);
+    }
+
+    private void UpdateBlurPreview(double endX, double endY)
+    {
+        if (_previewBlur == null)
+            return;
+
+        int x = Math.Min(_blurSelectionStart.X, (int)endX);
+        int y = Math.Min(_blurSelectionStart.Y, (int)endY);
+        int w = Math.Abs((int)endX - _blurSelectionStart.X);
+        int h = Math.Abs((int)endY - _blurSelectionStart.Y);
+
+        _previewBlur.Width = w;
+        _previewBlur.Height = h;
+        Canvas.SetLeft(_previewBlur, x);
+        Canvas.SetTop(_previewBlur, y);
+    }
+
+    private void RemoveBlurPreview()
+    {
+        if (_previewBlur != null)
+        {
+            DrawingCanvas.Children.Remove(_previewBlur);
+            _previewBlur = null;
+        }
+    }
+
+    private void DrawRedBox(WinRect bounds)
+    {
         var rect = new ShapeRectangle
         {
             Width = bounds.Width,
@@ -584,6 +783,123 @@ public sealed partial class EditScreenshotWindow : Window
             Data = BuildArrowGeometry(start.X, start.Y, end.X, end.Y)
         };
         DrawingCanvas.Children.Add(path);
+    }
+
+    private void ApplyBlur(WinRect selection)
+    {
+        double scaleX = _screenshotBitmap.Width / RootGrid.ActualWidth;
+        double scaleY = _screenshotBitmap.Height / RootGrid.ActualHeight;
+
+        int bmpX = Math.Max(0, (int)(selection.X * scaleX));
+        int bmpY = Math.Max(0, (int)(selection.Y * scaleY));
+        int bmpW = Math.Min((int)(selection.Width * scaleX), _screenshotBitmap.Width - bmpX);
+        int bmpH = Math.Min((int)(selection.Height * scaleY), _screenshotBitmap.Height - bmpY);
+
+        if (bmpW <= 0 || bmpH <= 0) return;
+
+        const int radius = 8;
+        const double sigma = 4.0;
+
+        // Precompute 1D Gaussian kernel.
+        int kernelSize = 2 * radius + 1;
+        float[] kernel = new float[kernelSize];
+        float kernelSum = 0f;
+        for (int i = 0; i < kernelSize; i++)
+        {
+            double d = i - radius;
+            kernel[i] = (float)Math.Exp(-(d * d) / (2.0 * sigma * sigma));
+            kernelSum += kernel[i];
+        }
+        for (int i = 0; i < kernelSize; i++)
+            kernel[i] /= kernelSum;
+
+        // Lock the entire bitmap.
+        var fullRect = new System.Drawing.Rectangle(0, 0, _screenshotBitmap.Width, _screenshotBitmap.Height);
+        var bmpData = _screenshotBitmap.LockBits(fullRect, ImageLockMode.ReadWrite, _screenshotBitmap.PixelFormat);
+        int bytesPerPixel = System.Drawing.Image.GetPixelFormatSize(_screenshotBitmap.PixelFormat) / 8;
+        int stride = bmpData.Stride;
+        int size = stride * bmpData.Height;
+        byte[] pixels = new byte[size];
+        System.Runtime.InteropServices.Marshal.Copy(bmpData.Scan0, pixels, 0, size);
+
+        byte[] result = new byte[size];
+        Array.Copy(pixels, result, size);
+
+        // Temporary buffer for horizontal pass.
+        byte[] temp = new byte[size];
+        Array.Copy(pixels, temp, size);
+
+        int regionEndY = bmpY + bmpH;
+        int regionEndX = bmpX + bmpW;
+
+        // Horizontal pass: blur within the selection region only.
+        for (int y = bmpY; y < regionEndY; y++)
+        {
+            for (int x = bmpX; x < regionEndX; x++)
+            {
+                float sumR = 0, sumG = 0, sumB = 0, weightSum = 0;
+
+                for (int k = 0; k < kernelSize; k++)
+                {
+                    int nx = x + k - radius;
+                    if (nx < bmpX || nx >= regionEndX) continue;
+
+                    int idx = y * stride + nx * bytesPerPixel;
+                    float w = kernel[k];
+                    sumB += pixels[idx] * w;
+                    sumG += pixels[idx + 1] * w;
+                    sumR += pixels[idx + 2] * w;
+                    weightSum += w;
+                }
+
+                if (weightSum == 0) continue;
+
+                int destIdx = y * stride + x * bytesPerPixel;
+                temp[destIdx] = (byte)(sumB / weightSum);
+                temp[destIdx + 1] = (byte)(sumG / weightSum);
+                temp[destIdx + 2] = (byte)(sumR / weightSum);
+            }
+        }
+
+        // Vertical pass: blur the horizontal result within the selection region.
+        for (int y = bmpY; y < regionEndY; y++)
+        {
+            for (int x = bmpX; x < regionEndX; x++)
+            {
+                float sumR = 0, sumG = 0, sumB = 0, weightSum = 0;
+
+                for (int k = 0; k < kernelSize; k++)
+                {
+                    int ny = y + k - radius;
+                    if (ny < bmpY || ny >= regionEndY) continue;
+
+                    int idx = ny * stride + x * bytesPerPixel;
+                    float w = kernel[k];
+                    sumB += temp[idx] * w;
+                    sumG += temp[idx + 1] * w;
+                    sumR += temp[idx + 2] * w;
+                    weightSum += w;
+                }
+
+                if (weightSum == 0) continue;
+
+                int destIdx = y * stride + x * bytesPerPixel;
+                result[destIdx] = (byte)(sumB / weightSum);
+                result[destIdx + 1] = (byte)(sumG / weightSum);
+                result[destIdx + 2] = (byte)(sumR / weightSum);
+            }
+        }
+
+        System.Runtime.InteropServices.Marshal.Copy(result, 0, bmpData.Scan0, size);
+        _screenshotBitmap.UnlockBits(bmpData);
+
+        RefreshScreenshotImage();
+    }
+
+    private async void RefreshScreenshotImage()
+    {
+        var bitmapImage = await ScreenshotService.ToBitmapImageAsync(_screenshotBitmap);
+        ScreenshotImage.Source = bitmapImage;
     }
 
     private readonly List<TextGroup> _textGroups = new();
@@ -723,50 +1039,50 @@ public sealed partial class EditScreenshotWindow : Window
     }
 
     private static double MeasureTextWidth(string text, double fontSize, double charWidth)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+
+        // TextBlock.Measure collapses trailing whitespace, so strip trailing
+        // spaces and add them back arithmetically.
+        int trailSpaces = 0;
+        while (trailSpaces < text.Length && text[text.Length - 1 - trailSpaces] == ' ')
+            trailSpaces++;
+
+        double measured = 0;
+        if (trailSpaces < text.Length)
         {
-            if (string.IsNullOrEmpty(text)) return 0;
-
-            // TextBlock.Measure collapses trailing whitespace, so strip trailing
-            // spaces and add them back arithmetically.
-            int trailSpaces = 0;
-            while (trailSpaces < text.Length && text[text.Length - 1 - trailSpaces] == ' ')
-                trailSpaces++;
-
-            double measured = 0;
-            if (trailSpaces < text.Length)
-            {
-                var tb = new TextBlock
-                {
-                    Text = text[..^trailSpaces],
-                    FontSize = fontSize,
-                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-                    TextTrimming = Microsoft.UI.Xaml.TextTrimming.None,
-                    TextWrapping = Microsoft.UI.Xaml.TextWrapping.NoWrap
-                };
-                tb.Measure(new WinSize(double.PositiveInfinity, double.PositiveInfinity));
-                measured = tb.DesiredSize.Width;
-            }
-
-            return measured + trailSpaces * charWidth;
-        }
-
-        private static double MeasureCharWidth(double fontSize)
-        {
-            // Measure a long calibration string and divide to get an accurate
-            // per-character advance. Measuring a single "W" would accumulate
-            // rounding error as text grows longer.
-            const int calibrationLength = 100;
             var tb = new TextBlock
             {
-                Text = new string('W', calibrationLength),
+                Text = text[..^trailSpaces],
                 FontSize = fontSize,
                 FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
                 TextTrimming = Microsoft.UI.Xaml.TextTrimming.None,
                 TextWrapping = Microsoft.UI.Xaml.TextWrapping.NoWrap
             };
             tb.Measure(new WinSize(double.PositiveInfinity, double.PositiveInfinity));
-            return tb.DesiredSize.Width / calibrationLength;
+            measured = tb.DesiredSize.Width;
         }
+
+        return measured + trailSpaces * charWidth;
+    }
+
+    private static double MeasureCharWidth(double fontSize)
+    {
+        // Measure a long calibration string and divide to get an accurate
+        // per-character advance. Measuring a single "W" would accumulate
+        // rounding error as text grows longer.
+        const int calibrationLength = 100;
+        var tb = new TextBlock
+        {
+            Text = new string('W', calibrationLength),
+            FontSize = fontSize,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+            TextTrimming = Microsoft.UI.Xaml.TextTrimming.None,
+            TextWrapping = Microsoft.UI.Xaml.TextWrapping.NoWrap
+        };
+        tb.Measure(new WinSize(double.PositiveInfinity, double.PositiveInfinity));
+        return tb.DesiredSize.Width / calibrationLength;
+    }
 
     private void StartCursorBlink()
     {

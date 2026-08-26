@@ -11,7 +11,8 @@
     xmlns:core="using:Microsoft.Xaml.Interactions.Core"
     xmlns:converters="using:Evania.Converters"
     mc:Ignorable="d"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Loaded="ScreenshotPage_Loaded">
 
     <Page.Resources>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />

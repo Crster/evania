@@ -13,7 +13,6 @@ public sealed partial class ScreenshotPage : Page
     {
         InitializeComponent();
         DataContext = ViewModel;
-        Loaded += ScreenshotPage_Loaded;
     }
 
     private async void ScreenshotPage_Loaded(object sender, RoutedEventArgs e)

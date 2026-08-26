@@ -6,6 +6,7 @@
     <RootNamespace>Evania</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x86;x64;ARM64</Platforms>
+        <Platform Condition="'$(Platform)'=='AnyCPU' or '$(Platform)'==''">x64</Platform>
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
@@ -42,9 +43,6 @@
     <PackageReference Include="Microsoft.Xaml.Behaviors.WinUI.Managed" Version="2.0.9" />
     <PackageReference Include="LiteDB" Version="5.0.21" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Windows\" />
   </ItemGroup>
 
   <!--

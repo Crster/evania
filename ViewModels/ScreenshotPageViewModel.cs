@@ -38,14 +38,12 @@ namespace Evania.ViewModels
             IsBusy = true;
             try
             {
-                MainWindow? mainWindow = App.MainWindow;
-                mainWindow?.AppWindow.Hide();
+                Bitmap? bitmap = await ScreenshotService.CaptureAndEditAsync(App.MainWindow);
 
-                await Task.Delay(150);
-
-                Bitmap bitmap = ScreenshotService.CaptureScreenshot();
-
-                mainWindow?.AppWindow.Show();
+                if (bitmap is null)
+                {
+                    return;
+                }
 
                 var image = await ScreenshotService.ToBitmapImageAsync(bitmap);
                 var item = new ScreenshotItem(bitmap, image);

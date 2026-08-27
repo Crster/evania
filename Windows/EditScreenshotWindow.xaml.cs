@@ -1214,14 +1214,18 @@ public sealed partial class EditScreenshotWindow : Window
 
         // Sample the screenshot pixels under the selection (blurs baked in, annotation overlay
         // ignored) rather than the flattened output a copy would emit: a picker reads the
-        // colour that is there, not the marks drawn on top of it. The window stays open so
-        // several colours can be picked in one session.
+        // colour that is there, not the marks drawn on top of it. The window stays open and the
+        // selection is cleared, so each pick starts fresh.
         using var selection = CropFromBitmap(_screenshotBitmap, _currentSelection);
         string? hex = ColorPickerService.GetDominantColorHex(selection);
         if (hex is not null)
         {
             ScreenshotService.CopyTextToClipboard(hex);
         }
+
+        _hasSelection = false;
+        _currentSelection = default;
+        UpdateTintOverlay();
     }
 
     private async void SaveButton_Click(object sender, RoutedEventArgs e)

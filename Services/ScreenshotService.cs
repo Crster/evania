@@ -118,6 +118,33 @@ namespace Evania.Services
         }
 
         /// <summary>
+        /// Composes the given bitmap onto a new screen-sized bitmap with the image centered.
+        /// This ensures EditScreenshotWindow receives a bitmap that matches the fullscreen
+        /// dimensions, so drawing/selection coordinates align correctly.
+        /// </summary>
+        public static Bitmap ComposeOntoScreen(Bitmap source)
+        {
+            int screenWidth = GetSystemMetrics(SystemMetric.SM_CXVIRTUALSCREEN);
+            int screenHeight = GetSystemMetrics(SystemMetric.SM_CYVIRTUALSCREEN);
+
+            if (source.Width >= screenWidth && source.Height >= screenHeight)
+            {
+                return (Bitmap)source.Clone();
+            }
+
+            var canvas = new Bitmap(screenWidth, screenHeight, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(canvas))
+            {
+                g.Clear(Color.Black);
+                int x = (screenWidth - source.Width) / 2;
+                int y = (screenHeight - source.Height) / 2;
+                g.DrawImage(source, x, y);
+            }
+
+            return canvas;
+        }
+
+        /// <summary>
         /// Loads a Bitmap from disk so it can be reused (e.g. for clipboard copy).
         /// </summary>
         public static Bitmap LoadBitmap(string filePath)

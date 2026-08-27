@@ -96,6 +96,8 @@ namespace Evania.ViewModels
                     return;
                 }
 
+                bitmap = ScreenshotService.ComposeOntoScreen(bitmap);
+
                 var editWindow = new EditScreenshotWindow(bitmap);
                 editWindow.Activate();
             }

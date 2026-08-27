@@ -85,7 +85,7 @@
                             CornerRadius="8"
                             Padding="4">
                             <Image
-                                Source="{x:Bind Image}"
+                                Source="{x:Bind Image, Mode=OneWay}"
                                 Stretch="Uniform"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center" />

@@ -38,16 +38,26 @@ namespace Evania.ViewModels
             IsBusy = true;
             try
             {
-                Bitmap? bitmap = await ScreenshotService.CaptureAndEditAsync(App.MainWindow);
+                ScreenshotEditResult result = await ScreenshotService.CaptureAndEditAsync(App.MainWindow);
 
-                if (bitmap is null)
+                if (result.SavedFilePath is { } savedPath)
+                {
+                    // The edit window already wrote the annotated image; show that, not the
+                    // raw capture, and treat it as saved.
+                    var savedImage = await ScreenshotService.LoadImageFromPathAsync(savedPath);
+                    Screenshots.Insert(0, new ScreenshotItem(savedImage, sourcePath: savedPath));
+                    LastSavedPath = savedPath;
+                }
+                else if (result.Bitmap is { } bitmap)
+                {
+                    var image = await ScreenshotService.ToBitmapImageAsync(bitmap);
+                    var item = new ScreenshotItem(bitmap, image);
+                    Screenshots.Insert(0, item);
+                }
+                else
                 {
                     return;
                 }
-
-                var image = await ScreenshotService.ToBitmapImageAsync(bitmap);
-                var item = new ScreenshotItem(bitmap, image);
-                Screenshots.Insert(0, item);
 
                 HasScreenshots = true;
                 IsEmpty = false;
@@ -75,7 +85,7 @@ namespace Evania.ViewModels
         }
 
         [RelayCommand]
-        private void EditScreenshot(ScreenshotItem? item)
+        private async Task EditScreenshot(ScreenshotItem? item)
         {
             if (item is null)
             {
@@ -84,22 +94,43 @@ namespace Evania.ViewModels
 
             try
             {
-                Bitmap? bitmap = item.Bitmap;
+                // A disk item's bitmap is ours to release once composited; a freshly captured
+                // item keeps its own, so it is only ever read from here.
+                Bitmap? loaded = item.Bitmap is null && item.SourcePath is not null
+                    ? ScreenshotService.LoadBitmap(item.SourcePath)
+                    : null;
 
-                if (bitmap is null && item.SourcePath is not null)
-                {
-                    bitmap = ScreenshotService.LoadBitmap(item.SourcePath);
-                }
-
-                if (bitmap is null)
+                Bitmap? source = loaded ?? item.Bitmap;
+                if (source is null)
                 {
                     return;
                 }
 
-                bitmap = ScreenshotService.ComposeOntoScreen(bitmap);
+                Bitmap canvas = ScreenshotService.ComposeOntoScreen(source, out Rectangle contentBounds);
+                loaded?.Dispose();
 
-                var editWindow = new EditScreenshotWindow(bitmap);
+                var editWindow = new EditScreenshotWindow(canvas, contentBounds);
+
+                var closeTcs = new TaskCompletionSource<bool>();
+                editWindow.Closed += (s, e) => closeTcs.TrySetResult(true);
+
                 editWindow.Activate();
+
+                await closeTcs.Task;
+
+                canvas.Dispose();
+                editWindow.EditedBitmap?.Dispose();
+
+                if (editWindow.IsCancelled || editWindow.SavedFilePath is not { } savedPath)
+                {
+                    return;
+                }
+
+                // The annotated image is on disk now: point the item at it so the list shows
+                // what was saved and stops offering a save for it.
+                var image = await ScreenshotService.LoadImageFromPathAsync(savedPath);
+                item.AdoptSavedFile(image, savedPath);
+                LastSavedPath = savedPath;
             }
             catch (Exception ex)
             {

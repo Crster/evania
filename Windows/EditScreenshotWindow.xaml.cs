@@ -47,7 +47,6 @@ internal sealed class TextGroup
 public sealed partial class EditScreenshotWindow : Window
 {
     private readonly Bitmap _screenshotBitmap;
-    private readonly Bitmap _originalBitmap;
     private EditToolMode _currentTool = EditToolMode.Select;
     private System.Drawing.Point _selectionStart;
     private System.Drawing.Point _selectionEnd;
@@ -71,6 +70,26 @@ public sealed partial class EditScreenshotWindow : Window
 
     public bool IsCancelled { get; private set; }
 
+    /// <summary>
+    /// Path of the file the edited image was written to, or null when nothing was saved.
+    /// </summary>
+    public string? SavedFilePath { get; private set; }
+
+    /// <summary>
+    /// The edited image (annotations and blurs baked in, cropped to the selection when the
+    /// user made one). The caller owns it. Null only when the session was cancelled.
+    /// </summary>
+    public Bitmap? EditedBitmap { get; private set; }
+
+    // The region of _screenshotBitmap that holds the real image. Editing an existing,
+    // smaller screenshot pads it onto a screen-sized canvas so on-screen coordinates line
+    // up; this is what lets the result be trimmed back to the image itself on the way out.
+    private readonly System.Drawing.Rectangle _contentBounds;
+
+    // Set once the session has produced its result, so a second Ctrl+S / Ctrl+C while the
+    // first one is still writing cannot emit a duplicate file or clobber the result.
+    private bool _resultTaken;
+
     private bool _isDraggingToolbar;
     private double _toolbarDragOffsetX;
     private double _toolbarDragOffsetY;
@@ -85,10 +104,13 @@ public sealed partial class EditScreenshotWindow : Window
     // without affecting persistent drawing elements (boxes, arrows, text)
     private readonly List<UIElement> _tintElements = new();
 
-    public EditScreenshotWindow(Bitmap screenshotBitmap)
+    public EditScreenshotWindow(
+        Bitmap screenshotBitmap,
+        System.Drawing.Rectangle? contentBounds = null)
     {
         _screenshotBitmap = screenshotBitmap;
-        _originalBitmap = (Bitmap)screenshotBitmap.Clone();
+        _contentBounds = contentBounds ?? new System.Drawing.Rectangle(
+            0, 0, screenshotBitmap.Width, screenshotBitmap.Height);
         InitializeComponent();
 
         AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
@@ -1167,20 +1189,12 @@ public sealed partial class EditScreenshotWindow : Window
         if (!_hasSelection)
             return;
 
-        await CopySelectionToClipboardAsync();
-
-        // Restore original bitmap so the image can be edited again later
-        using (var g = Graphics.FromImage(_screenshotBitmap))
-        {
-            g.DrawImage(_originalBitmap, 0, 0);
-        }
-
-        Close();
+        await CopyAndCloseAsync();
     }
 
     private async void SaveButton_Click(object sender, RoutedEventArgs e)
     {
-        await SaveSelectionAsync();
+        await SaveAndCloseAsync();
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
@@ -1295,7 +1309,9 @@ public sealed partial class EditScreenshotWindow : Window
                 if (InputKeyboardSource.GetKeyStateForCurrentThread(WinVirtualKey.Control)
                     is CoreVirtualKeyStates.Down)
                 {
-                    _ = SaveSelectionAsync();
+                    _ = SaveAndCloseAsync();
+                    e.Handled = true;
+                    return;
                 }
                 break;
         }
@@ -1314,14 +1330,11 @@ public sealed partial class EditScreenshotWindow : Window
 
     #region Clipboard and Save
 
-    private async Task CopySelectionToClipboardAsync()
+    private static async Task WriteToClipboardAsync(Bitmap bitmap)
     {
-        using var renderedBitmap = await RenderCanvasToBitmap();
-        using var bitmapToCopy = CropFromBitmap(renderedBitmap, _currentSelection);
-
         // Encode as PNG to memory stream
         using var memStream = new MemoryStream();
-        bitmapToCopy.Save(memStream, System.Drawing.Imaging.ImageFormat.Png);
+        bitmap.Save(memStream, System.Drawing.Imaging.ImageFormat.Png);
         memStream.Position = 0;
 
         // Convert to RandomAccessStream
@@ -1338,10 +1351,79 @@ public sealed partial class EditScreenshotWindow : Window
         global::Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dataPackage);
     }
 
+    /// <summary>
+    /// Flattens the on-screen annotations into the bitmap and returns what the user is left
+    /// with: the selection when they made one, otherwise the image trimmed back to the region
+    /// it occupied before being padded to screen size.
+    /// </summary>
+    private async Task<Bitmap> RenderEditedBitmapAsync()
+    {
+        using var rendered = await RenderCanvasToBitmap();
+        return _hasSelection
+            ? CropFromBitmap(rendered, _currentSelection)
+            : CropToContent(rendered);
+    }
+
+    private Bitmap CropToContent(Bitmap source)
+    {
+        var bounds = _contentBounds;
+        bounds.Intersect(new System.Drawing.Rectangle(0, 0, source.Width, source.Height));
+
+        if (bounds.Width <= 0 || bounds.Height <= 0 ||
+            (bounds.Width == source.Width && bounds.Height == source.Height))
+        {
+            return (Bitmap)source.Clone();
+        }
+
+        var cropped = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(cropped))
+        {
+            g.DrawImage(source,
+                new System.Drawing.Rectangle(0, 0, bounds.Width, bounds.Height),
+                bounds,
+                GraphicsUnit.Pixel);
+        }
+
+        return cropped;
+    }
+
     private async Task CopyAndCloseAsync()
     {
-        await CopySelectionToClipboardAsync();
+        if (_resultTaken)
+            return;
+        _resultTaken = true;
+
+        using var rendered = await RenderCanvasToBitmap();
+        using (var selection = CropFromBitmap(rendered, _currentSelection))
+        {
+            await WriteToClipboardAsync(selection);
+        }
+
+        EditedBitmap = CropToContent(rendered);
+
         Close();
+    }
+
+    private async Task SaveAndCloseAsync()
+    {
+        if (_resultTaken)
+            return;
+        _resultTaken = true;
+
+        try
+        {
+            EditedBitmap = await RenderEditedBitmapAsync();
+            SavedFilePath = await ScreenshotService.SaveScreenshotAsync(EditedBitmap);
+        }
+        catch (Exception ex)
+        {
+            // The edited image survives as an unsaved item, so the list can offer Save again.
+            System.Diagnostics.Debug.WriteLine($"Save failed: {ex.Message}");
+        }
+        finally
+        {
+            Close();
+        }
     }
 
     private async Task<Bitmap> RenderCanvasToBitmap()
@@ -1467,31 +1549,6 @@ public sealed partial class EditScreenshotWindow : Window
         }
 
         return cropped;
-    }
-
-    private async Task SaveSelectionAsync()
-    {
-        // Render canvas elements (boxes, arrows, text) onto a working bitmap
-        using var renderedBitmap = await RenderCanvasToBitmap();
-
-        Bitmap bitmapToSave;
-        if (_hasSelection)
-        {
-            bitmapToSave = CropFromBitmap(renderedBitmap, _currentSelection);
-        }
-        else
-        {
-            bitmapToSave = (Bitmap)renderedBitmap.Clone();
-        }
-
-        try
-        {
-            await ScreenshotService.SaveScreenshotAsync(bitmapToSave);
-        }
-        finally
-        {
-            bitmapToSave.Dispose();
-        }
     }
 
     #endregion

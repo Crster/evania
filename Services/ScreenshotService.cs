@@ -11,6 +11,14 @@ using Windows.Storage;
 
 namespace Evania.Services
 {
+    /// <summary>
+    /// Outcome of an interactive capture + edit session. When the user saved, only
+    /// <see cref="SavedFilePath"/> is set and the image already lives on disk; otherwise
+    /// <see cref="Bitmap"/> carries the image still waiting to be saved. Both are null when
+    /// the session was cancelled. The caller owns whatever is non-null.
+    /// </summary>
+    public sealed record ScreenshotEditResult(string? SavedFilePath, Bitmap? Bitmap);
+
     public static class ScreenshotService
     {
         /// <summary>
@@ -20,10 +28,8 @@ namespace Evania.Services
         /// When <paramref name="mainWindow"/> is non-null, it is hidden during capture and
         /// re-shown after the edit window closes. When null (e.g. shortcut-key invocation
         /// with no visible MainWindow), the capture proceeds without any window management.
-        ///
-        /// Returns the edited bitmap, or null when the user cancelled.
         /// </summary>
-        public static async Task<Bitmap?> CaptureAndEditAsync(Microsoft.UI.Xaml.Window? mainWindow = null)
+        public static async Task<ScreenshotEditResult> CaptureAndEditAsync(Microsoft.UI.Xaml.Window? mainWindow = null)
         {
             mainWindow?.AppWindow.Hide();
 
@@ -45,10 +51,25 @@ namespace Evania.Services
             if (editWindow.IsCancelled)
             {
                 bitmap.Dispose();
-                return null;
+                return new ScreenshotEditResult(null, null);
             }
 
-            return bitmap;
+            // A save wrote the edited image to disk — that file is the result, the capture
+            // it was derived from is spent.
+            if (editWindow.SavedFilePath is not null)
+            {
+                bitmap.Dispose();
+                editWindow.EditedBitmap?.Dispose();
+                return new ScreenshotEditResult(editWindow.SavedFilePath, null);
+            }
+
+            if (editWindow.EditedBitmap is { } edited)
+            {
+                bitmap.Dispose();
+                return new ScreenshotEditResult(null, edited);
+            }
+
+            return new ScreenshotEditResult(null, bitmap);
         }
 
         /// <summary>
@@ -118,29 +139,46 @@ namespace Evania.Services
         }
 
         /// <summary>
+        /// Same as <see cref="LoadImageAsync(StorageFile)"/> for callers that only have a
+        /// path and should not depend on the WinRT storage broker.
+        /// </summary>
+        public static async Task<BitmapImage> LoadImageFromPathAsync(string filePath)
+        {
+            using var fs = File.OpenRead(filePath);
+            BitmapImage image = new();
+            await image.SetSourceAsync(fs.AsRandomAccessStream());
+            return image;
+        }
+
+        /// <summary>
         /// Composes the given bitmap onto a new screen-sized bitmap with the image centered.
         /// This ensures EditScreenshotWindow receives a bitmap that matches the fullscreen
         /// dimensions, so drawing/selection coordinates align correctly.
         /// </summary>
-        public static Bitmap ComposeOntoScreen(Bitmap source)
+        /// <param name="contentBounds">Where the source image landed on the canvas, so the
+        /// edited result can be trimmed back to it instead of saving the padding.</param>
+        public static Bitmap ComposeOntoScreen(Bitmap source, out Rectangle contentBounds)
         {
             int screenWidth = GetSystemMetrics(SystemMetric.SM_CXVIRTUALSCREEN);
             int screenHeight = GetSystemMetrics(SystemMetric.SM_CYVIRTUALSCREEN);
 
             if (source.Width >= screenWidth && source.Height >= screenHeight)
             {
+                contentBounds = new Rectangle(0, 0, source.Width, source.Height);
                 return (Bitmap)source.Clone();
             }
 
             var canvas = new Bitmap(screenWidth, screenHeight, PixelFormat.Format32bppArgb);
+            int x = (screenWidth - source.Width) / 2;
+            int y = (screenHeight - source.Height) / 2;
             using (var g = Graphics.FromImage(canvas))
             {
                 g.Clear(Color.Black);
-                int x = (screenWidth - source.Width) / 2;
-                int y = (screenHeight - source.Height) / 2;
                 g.DrawImage(source, x, y);
             }
 
+            contentBounds = new Rectangle(x, y, source.Width, source.Height);
+            contentBounds.Intersect(new Rectangle(0, 0, screenWidth, screenHeight));
             return canvas;
         }
 

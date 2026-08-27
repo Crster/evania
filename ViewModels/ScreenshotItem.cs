@@ -8,12 +8,13 @@ namespace Evania.ViewModels
     public partial class ScreenshotItem : ObservableObject
     {
         // Non-null for items just captured in memory; null for items loaded from disk.
-        public Bitmap? Bitmap { get; }
+        public Bitmap? Bitmap { get; private set; }
 
-        public BitmapImage Image { get; }
+        [ObservableProperty]
+        public partial BitmapImage Image { get; set; }
 
         // Non-null for items loaded from disk; null for freshly captured items.
-        public string? SourcePath { get; }
+        public string? SourcePath { get; private set; }
 
         public bool HasBitmapSource => Bitmap is not null;
 
@@ -50,6 +51,21 @@ namespace Evania.ViewModels
         {
             Bitmap = bitmap;
             Image = image;
+        }
+
+        /// <summary>
+        /// Points this item at <paramref name="savedPath"/> — the file the edited image was
+        /// written to — and shows that image instead of the in-memory one. Used when an edit
+        /// session saves, so the list reflects what is on disk and stops offering a save button.
+        /// </summary>
+        public void AdoptSavedFile(BitmapImage image, string savedPath)
+        {
+            Bitmap?.Dispose();
+            Bitmap = null;
+            Image = image;
+            SourcePath = savedPath;
+            IsSaved = true;
+            OnPropertyChanged(nameof(HasBitmapSource));
         }
 
         public void Dispose() => Bitmap?.Dispose();

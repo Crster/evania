@@ -97,15 +97,15 @@
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center">
                             <Button
-                                Command="{Binding ElementName=PageRoot, Path=ViewModel.CopyScreenshotCommand}"
+                                Command="{Binding ElementName=PageRoot, Path=ViewModel.EditScreenshotCommand}"
                                 CommandParameter="{Binding}"
                                 Width="48"
                                 Height="48"
                                 CornerRadius="24"
-                                ToolTipService.ToolTip="Copy image to clipboard"
+                                ToolTipService.ToolTip="Edit screenshot"
                                 Style="{StaticResource AccentButtonStyle}"
-                                Visibility="{x:Bind ShowCopyButton, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                                <SymbolIcon Symbol="Copy"/>
+                                Visibility="{x:Bind ShowEditButton, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <SymbolIcon Symbol="Edit"/>
                             </Button>
 
                             <Button

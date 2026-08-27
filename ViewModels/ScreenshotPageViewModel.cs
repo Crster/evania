@@ -75,27 +75,33 @@ namespace Evania.ViewModels
         }
 
         [RelayCommand]
-        private void CopyScreenshot(ScreenshotItem? item)
+        private void EditScreenshot(ScreenshotItem? item)
         {
             if (item is null)
             {
                 return;
             }
 
-            if (item.Bitmap is not null)
-            {
-                ScreenshotService.CopyBitmapToClipboard(item.Bitmap);
-                return;
-            }
-
             try
             {
-                using var bitmap = ScreenshotService.LoadBitmap(item.SourcePath!);
-                ScreenshotService.CopyBitmapToClipboard(bitmap);
+                Bitmap? bitmap = item.Bitmap;
+
+                if (bitmap is null && item.SourcePath is not null)
+                {
+                    bitmap = ScreenshotService.LoadBitmap(item.SourcePath);
+                }
+
+                if (bitmap is null)
+                {
+                    return;
+                }
+
+                var editWindow = new EditScreenshotWindow(bitmap);
+                editWindow.Activate();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to copy screenshot: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Failed to open edit window: {ex.Message}");
             }
         }
 

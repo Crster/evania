@@ -29,12 +29,12 @@ namespace Evania.ViewModels
         /// </summary>
         public bool ShowSaveButton => !IsSaved && IsPointerOver;
 
-        public bool ShowCopyButton => IsPointerOver;
+        public bool ShowEditButton => IsPointerOver;
 
         partial void OnIsPointerOverChanged(bool value)
         {
             OnPropertyChanged(nameof(ShowSaveButton));
-            OnPropertyChanged(nameof(ShowCopyButton));
+            OnPropertyChanged(nameof(ShowEditButton));
         }
 
         partial void OnIsSavedChanged(bool value) => OnPropertyChanged(nameof(ShowSaveButton));

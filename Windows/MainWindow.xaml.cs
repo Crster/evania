@@ -36,10 +36,15 @@ public sealed partial class MainWindow : Window
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        string tag = ViewModel.SelectedMenuItem?.Tag ?? string.Empty;
-        Type? pageType = tag switch
+        // Take the item from the event: the two-way SelectedItem binding is not guaranteed to
+        // have reached the view model by the time this handler runs.
+        NavigationItemViewModel? item =
+            args.SelectedItem as NavigationItemViewModel ?? ViewModel.SelectedMenuItem;
+
+        Type? pageType = item?.Tag switch
         {
             nameof(ScreenshotPage) => typeof(ScreenshotPage),
+            nameof(ScreenRecordPage) => typeof(ScreenRecordPage),
             _ => null
         };
 

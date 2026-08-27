@@ -48,6 +48,10 @@
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="graphicsCaptureProgrammatic" />
+    <rescap:Capability Name="graphicsCaptureWithoutBorder" />
     <systemai:Capability Name="systemAIModels"/>
+    <DeviceCapability Name="microphone" />
+    <DeviceCapability Name="webcam" />
   </Capabilities>
 </Package>

@@ -14,8 +14,8 @@ namespace Evania.ViewModels
         [ObservableProperty]
         public partial string IconGlyph { get; set; }
 
-        [ObservableProperty]
-        public partial bool IsSelected { get; set; }
+        // Selection belongs to the NavigationView; mirroring it here would let the two bindings
+        // fight over which item is selected.
     }
 
     public partial class MainViewModel : ObservableObject
@@ -33,13 +33,12 @@ namespace Evania.ViewModels
                 {
                     Content = "Screenshot",
                     Tag = "ScreenshotPage",
-                    IconGlyph = "\uF406",
-                    IsSelected = true
+                    IconGlyph = "\uF406"
                 },
                 new NavigationItemViewModel
                 {
                     Content = "Screen Record",
-                    Tag = "SamplePage2",
+                    Tag = "ScreenRecordPage",
                     IconGlyph = "\uF7EE"
                 }
             };

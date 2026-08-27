@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Evania.Windows.RecordToolbarWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Record">
+
+    <!--
+        The bar paints itself rather than relying on a backdrop: the toolbar has no title bar,
+        so the glyphs are given fixed light colours instead of theme brushes, which would go
+        dark-on-dark when the system is in light mode.
+    -->
+    <Grid x:Name="RootGrid"
+          Background="#F02B2B2B"
+          Loaded="RootGrid_Loaded">
+        <Grid.Resources>
+            <Style x:Key="ToolbarToggleButtonStyle" TargetType="ToggleButton">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="#F4F4F4" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="MinWidth" Value="34" />
+                <Setter Property="Padding" Value="7,4" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <ContentPresenter x:Name="ContentPresenter"
+                                              Background="{TemplateBinding Background}"
+                                              BorderBrush="{TemplateBinding BorderBrush}"
+                                              BorderThickness="{TemplateBinding BorderThickness}"
+                                              CornerRadius="{TemplateBinding CornerRadius}"
+                                              Padding="{TemplateBinding Padding}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              AutomationProperties.AccessibilityView="Raw">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="#22FFFFFF" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="#18FFFFFF" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Opacity">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="0.38" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Checked">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="CheckedPointerOver">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorSecondaryBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="CheckedPressed">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource AccentFillColorTertiaryBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextOnAccentFillColorSecondaryBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </ContentPresenter>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ToolbarButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="#F4F4F4" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="MinWidth" Value="34" />
+                <Setter Property="Padding" Value="7,4" />
+                <Setter Property="CornerRadius" Value="4" />
+            </Style>
+
+            <!-- Stopping ends the session, so it reads as a red target rather than grey text. -->
+            <Style x:Key="StopButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter x:Name="ContentPresenter"
+                                              Background="{TemplateBinding Background}"
+                                              BorderBrush="{TemplateBinding BorderBrush}"
+                                              BorderThickness="{TemplateBinding BorderThickness}"
+                                              CornerRadius="{TemplateBinding CornerRadius}"
+                                              Padding="{TemplateBinding Padding}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              AutomationProperties.AccessibilityView="Raw">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="#FFFF6B6B" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="PointerOver">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="#FFE51400" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="#FFFFFFFF" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="#FFB81100" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Foreground">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="#FFF4F4F4" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentPresenter" Storyboard.TargetProperty="Opacity">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="0.38" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </ContentPresenter>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Grid.Resources>
+
+        <!--
+            Top-left aligned, and the window is resized to this panel's measured size (see
+            ResizeBar) so the grip sits at the left edge of the bar instead of floating in the
+            middle of a strip wider than its content.
+        -->
+        <StackPanel
+            x:Name="BarPanel"
+            Orientation="Vertical"
+            Spacing="6"
+            Margin="6,4"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top">
+
+            <StackPanel
+                Orientation="Horizontal"
+                Spacing="2">
+
+                <StackPanel
+                    x:Name="GripIcon"
+                    Orientation="Vertical"
+                    Spacing="2"
+                    Margin="2,0,6,0"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    PointerPressed="GripIcon_PointerPressed"
+                    PointerMoved="GripIcon_PointerMoved"
+                    PointerReleased="GripIcon_PointerReleased">
+                    <Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
+                    <Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
+                    <Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
+                </StackPanel>
+
+                <Ellipse
+                    x:Name="RecordDot"
+                    Width="10"
+                    Height="10"
+                    Fill="#FFE51400"
+                    VerticalAlignment="Center"
+                    Margin="0,0,6,0" />
+
+                <!--
+                    Fixed width with a two-digit hour field: a clock that gains a pixel on each
+                    tick drags every control to its right along with it.
+                -->
+                <TextBlock
+                    x:Name="ElapsedText"
+                    Text="00:00:00"
+                    FontSize="14"
+                    Foreground="#F4F4F4"
+                    MinWidth="66"
+                    TextAlignment="Center"
+                    VerticalAlignment="Center"
+                    Margin="0,0,8,0" />
+
+                <Border Width="1" Background="#40FFFFFF" Margin="2,6" />
+
+                <ToggleButton
+                    x:Name="MicButton"
+                    Style="{StaticResource ToolbarToggleButtonStyle}"
+                    ToolTipService.ToolTip="Record microphone"
+                    Click="MicButton_Click">
+                    <FontIcon Glyph="&#xE720;" FontSize="16" />
+                </ToggleButton>
+
+                <ToggleButton
+                    x:Name="SystemAudioButton"
+                    Style="{StaticResource ToolbarToggleButtonStyle}"
+                    ToolTipService.ToolTip="Record PC sound"
+                    Click="SystemAudioButton_Click">
+                    <FontIcon Glyph="&#xE995;" FontSize="16" />
+                </ToggleButton>
+
+                <ToggleButton
+                    x:Name="CameraButton"
+                    Style="{StaticResource ToolbarToggleButtonStyle}"
+                    ToolTipService.ToolTip="Record camera"
+                    Click="CameraButton_Click">
+                    <FontIcon Glyph="&#xE722;" FontSize="16" />
+                </ToggleButton>
+
+                <Border Width="1" Background="#40FFFFFF" Margin="2,6" />
+
+                <Button
+                    x:Name="PauseButton"
+                    Style="{StaticResource ToolbarButtonStyle}"
+                    ToolTipService.ToolTip="Pause"
+                    Click="PauseButton_Click">
+                    <FontIcon x:Name="PauseGlyph" Glyph="&#xE769;" FontSize="16" />
+                </Button>
+
+                <Button
+                    x:Name="StopButton"
+                    Style="{StaticResource StopButtonStyle}"
+                    ToolTipService.ToolTip="Stop and save"
+                    Click="StopButton_Click">
+                    <FontIcon Glyph="&#xE71A;" FontSize="16" />
+                </Button>
+            </StackPanel>
+
+            <!--
+                The bar grows to fit this box, which is also how the camera gets into the video:
+                the monitor is captured whole, so whatever is drawn here is recorded. Mirrored so
+                it behaves like a mirror, as a self-view should.
+            -->
+            <Border
+                x:Name="CameraBox"
+                Width="240"
+                Height="135"
+                Margin="0,0,0,4"
+                Background="Black"
+                CornerRadius="4"
+                Visibility="Collapsed">
+                <Image
+                    x:Name="CameraImage"
+                    Stretch="Uniform"
+                    RenderTransformOrigin="0.5,0.5">
+                    <Image.RenderTransform>
+                        <ScaleTransform ScaleX="-1" />
+                    </Image.RenderTransform>
+                </Image>
+            </Border>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -27,8 +27,7 @@
                 <DataTemplate x:DataType="vm:NavigationItemViewModel">
                     <NavigationViewItem
                         Content="{x:Bind Content}"
-                        Tag="{x:Bind Tag}"
-                        IsSelected="{x:Bind IsSelected, Mode=TwoWay}">
+                        Tag="{x:Bind Tag}">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="{x:Bind IconGlyph}" />
                         </NavigationViewItem.Icon>

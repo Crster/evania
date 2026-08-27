@@ -213,6 +213,17 @@ namespace Evania.Services
         }
 
         /// <summary>
+        /// Copies plain text to the Windows clipboard so the user can paste it into any app.
+        /// </summary>
+        public static void CopyTextToClipboard(string text)
+        {
+            DataPackage dataPackage = new();
+            dataPackage.SetText(text);
+            Clipboard.SetContent(dataPackage);
+            Clipboard.Flush();
+        }
+
+        /// <summary>
         /// Copies an existing screenshot file into the Pictures\Screenshots folder
         /// with a new timestamped name. Used to "save" items that were loaded from
         /// disk (which have no in-memory Bitmap).

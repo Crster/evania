@@ -1189,7 +1189,22 @@ public sealed partial class EditScreenshotWindow : Window
         if (!_hasSelection)
             return;
 
-        await CopyAndCloseAsync();
+        await RunOnSelectionAsync(WriteToClipboardAsync);
+    }
+
+    private async void CopyTextButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_hasSelection)
+            return;
+
+        await RunOnSelectionAsync(async selection =>
+        {
+            string? text = await OcrService.RecognizeTextAsync(selection);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                ScreenshotService.CopyTextToClipboard(text);
+            }
+        });
     }
 
     private async void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -1298,7 +1313,7 @@ public sealed partial class EditScreenshotWindow : Window
                 {
                     if (_hasSelection)
                     {
-                        _ = CopyAndCloseAsync();
+                        _ = RunOnSelectionAsync(WriteToClipboardAsync);
                         e.Handled = true;
                         return;
                     }
@@ -1387,21 +1402,36 @@ public sealed partial class EditScreenshotWindow : Window
         return cropped;
     }
 
-    private async Task CopyAndCloseAsync()
+    /// <summary>
+    /// Flattens the annotations, hands the cropped selection to <paramref name="actOnSelection"/>
+    /// (clipboard image, OCR text, ...), commits the edited image and ends the session. Runs once:
+    /// a second invocation while the first is still working is ignored.
+    /// </summary>
+    private async Task RunOnSelectionAsync(Func<Bitmap, Task> actOnSelection)
     {
         if (_resultTaken)
             return;
         _resultTaken = true;
 
-        using var rendered = await RenderCanvasToBitmap();
-        using (var selection = CropFromBitmap(rendered, _currentSelection))
+        try
         {
-            await WriteToClipboardAsync(selection);
+            using var rendered = await RenderCanvasToBitmap();
+            using (var selection = CropFromBitmap(rendered, _currentSelection))
+            {
+                await actOnSelection(selection);
+            }
+
+            EditedBitmap = CropToContent(rendered);
         }
-
-        EditedBitmap = CropToContent(rendered);
-
-        Close();
+        catch (Exception ex)
+        {
+            // The result is already claimed, so leaving the window open here would strand it.
+            System.Diagnostics.Debug.WriteLine($"Edit action failed: {ex.Message}");
+        }
+        finally
+        {
+            Close();
+        }
     }
 
     private async Task SaveAndCloseAsync()

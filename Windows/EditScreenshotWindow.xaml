@@ -189,6 +189,14 @@
 				</Button>
 
 				<Button
+                    x:Name="CopyTextButton"
+                    Style="{StaticResource SubtleButtonStyle}"
+                    ToolTipService.ToolTip="Copy Text"
+                    Click="CopyTextButton_Click">
+					<FontIcon Glyph="&#xE8FE;" FontSize="16" />
+				</Button>
+
+				<Button
                     x:Name="SaveButton"
                     Style="{StaticResource SubtleButtonStyle}"
                     ToolTipService.ToolTip="Save"

@@ -9,14 +9,15 @@
     Title="Edit Screenshot">
 
 	<Grid x:Name="RootGrid"
-          IsTabStop="True"
-          Loaded="RootGrid_Loaded"
-          PointerPressed="RootGrid_PointerPressed"
-          PointerMoved="RootGrid_PointerMoved"
-          PointerReleased="RootGrid_PointerReleased"
-          DoubleTapped="RootGrid_DoubleTapped"
-          KeyDown="RootGrid_KeyDown"
-          CharacterReceived="RootGrid_CharacterReceived">
+		  Background="Black"
+		  IsTabStop="True"
+		  Loaded="RootGrid_Loaded"
+		  PointerPressed="RootGrid_PointerPressed"
+		  PointerMoved="RootGrid_PointerMoved"
+		  PointerReleased="RootGrid_PointerReleased"
+		  DoubleTapped="RootGrid_DoubleTapped"
+		  KeyDown="RootGrid_KeyDown"
+		  CharacterReceived="RootGrid_CharacterReceived">
 		<Grid.Resources>
 			<Style x:Key="SubtleToggleButtonStyle" TargetType="ToggleButton">
 				<Setter Property="Background" Value="Transparent" />
@@ -99,14 +100,12 @@
 			</Style>
 		</Grid.Resources>
 		<Image
-            x:Name="ScreenshotImage"
-            Stretch="UniformToFill"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center" />
+			x:Name="ScreenshotImage"
+			Stretch="None"
+			HorizontalAlignment="Center"
+			VerticalAlignment="Center" />
 
-		<Canvas x:Name="TintCanvas" />
-
-		<Canvas x:Name="DrawingCanvas" />
+		<Canvas x:Name="OverlayCanvas" />
 
 		<Border
             x:Name="ToolbarBorder"
@@ -140,7 +139,7 @@
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Select"
                     IsChecked="True"
-                    Click="SelectToolButton_Click">
+                    Click="ToolButton_Click">
 					<FontIcon Glyph="&#xE924;" FontSize="16" />
 				</ToggleButton>
 
@@ -148,7 +147,7 @@
                     x:Name="DrawBoxToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Draw Box"
-                    Click="DrawBoxToolButton_Click">
+                    Click="ToolButton_Click">
 					<FontIcon Glyph="&#xE739;" FontSize="16" />
 				</ToggleButton>
 
@@ -156,7 +155,7 @@
                     x:Name="DrawArrowToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Draw Arrow"
-                    Click="DrawArrowToolButton_Click">
+                    Click="ToolButton_Click">
 					<FontIcon Glyph="&#xE741;" FontSize="16" />
 				</ToggleButton>
 
@@ -164,7 +163,7 @@
                     x:Name="DrawTextToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Draw Text"
-                    Click="DrawTextToolButton_Click">
+                    Click="ToolButton_Click">
 					<FontIcon Glyph="&#xF7B5;" FontSize="16" />
 				</ToggleButton>
 
@@ -172,7 +171,7 @@
                     x:Name="BlurToolButton"
                     Style="{StaticResource SubtleToggleButtonStyle}"
                     ToolTipService.ToolTip="Blur"
-                    Click="BlurToolButton_Click">
+                    Click="ToolButton_Click">
 					<FontIcon Glyph="&#xED61;" FontSize="16" />
 				</ToggleButton>
 
@@ -187,14 +186,6 @@
                     ToolTipService.ToolTip="Copy"
                     Click="CopyButton_Click">
 					<FontIcon Glyph="&#xE8C8;" FontSize="16" />
-				</Button>
-
-				<Button
-                    x:Name="CopyTextButton"
-                    Style="{StaticResource SubtleButtonStyle}"
-                    ToolTipService.ToolTip="Copy Text"
-                    Click="CopyTextButton_Click">
-					<FontIcon Glyph="&#xE8AC;" FontSize="16" />
 				</Button>
 
 				<Button

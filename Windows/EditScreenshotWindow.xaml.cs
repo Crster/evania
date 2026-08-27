@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
@@ -11,8 +10,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Shapes;
-using Windows.Foundation;
 using Evania.Services;
 using WinColor = Windows.UI.Color;
 using WinSize = Windows.Foundation.Size;
@@ -50,6 +47,7 @@ internal sealed class TextGroup
 public sealed partial class EditScreenshotWindow : Window
 {
     private readonly Bitmap _screenshotBitmap;
+    private readonly Bitmap _originalBitmap;
     private EditToolMode _currentTool = EditToolMode.Select;
     private System.Drawing.Point _selectionStart;
     private System.Drawing.Point _selectionEnd;
@@ -57,11 +55,9 @@ public sealed partial class EditScreenshotWindow : Window
     private WinRect _currentSelection;
     private bool _hasSelection;
 
-    // Blur-specific selection state (independent from Select tool)
+    // Blur-specific drag state (independent from Select tool)
     private System.Drawing.Point _blurSelectionStart;
     private System.Drawing.Point _blurSelectionEnd;
-    private WinRect _blurSelection;
-    private bool _hasBlurSelection;
 
     // Draw-specific drag state (independent from Select selection)
     private System.Drawing.Point _drawStart;
@@ -71,6 +67,7 @@ public sealed partial class EditScreenshotWindow : Window
     private ShapeRectangle? _previewBox;
     private ShapePath? _previewArrow;
     private ShapeRectangle? _previewBlur;
+    private ShapeRectangle? _previewBlurWhite;
 
     public bool IsCancelled { get; private set; }
 
@@ -84,9 +81,14 @@ public sealed partial class EditScreenshotWindow : Window
     private bool _cursorVisible;
     private bool _isInTextInputMode;
 
+    // Track tint overlay elements separately so we can clear/redraw them
+    // without affecting persistent drawing elements (boxes, arrows, text)
+    private readonly List<UIElement> _tintElements = new();
+
     public EditScreenshotWindow(Bitmap screenshotBitmap)
     {
         _screenshotBitmap = screenshotBitmap;
+        _originalBitmap = (Bitmap)screenshotBitmap.Clone();
         InitializeComponent();
 
         AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
@@ -171,41 +173,17 @@ public sealed partial class EditScreenshotWindow : Window
 
     #region Tool Selection
 
-    private void SelectToolButton_Click(object sender, RoutedEventArgs e)
+    private void ToolButton_Click(object sender, RoutedEventArgs e)
     {
         DeactivateTextInput();
-        _currentTool = EditToolMode.Select;
-        UpdateToolButtonStyles();
-        UpdateTintOverlay();
-    }
 
-    private void DrawBoxToolButton_Click(object sender, RoutedEventArgs e)
-    {
-        DeactivateTextInput();
-        _currentTool = EditToolMode.DrawBox;
-        UpdateToolButtonStyles();
-        UpdateTintOverlay();
-    }
+        var button = (Microsoft.UI.Xaml.Controls.Primitives.ToggleButton)sender;
+        if (button == SelectToolButton) _currentTool = EditToolMode.Select;
+        else if (button == DrawBoxToolButton) _currentTool = EditToolMode.DrawBox;
+        else if (button == DrawArrowToolButton) _currentTool = EditToolMode.DrawArrow;
+        else if (button == DrawTextToolButton) _currentTool = EditToolMode.DrawText;
+        else if (button == BlurToolButton) _currentTool = EditToolMode.Blur;
 
-    private void DrawArrowToolButton_Click(object sender, RoutedEventArgs e)
-    {
-        DeactivateTextInput();
-        _currentTool = EditToolMode.DrawArrow;
-        UpdateToolButtonStyles();
-        UpdateTintOverlay();
-    }
-
-    private void DrawTextToolButton_Click(object sender, RoutedEventArgs e)
-    {
-        _currentTool = EditToolMode.DrawText;
-        UpdateToolButtonStyles();
-        UpdateTintOverlay();
-    }
-
-    private void BlurToolButton_Click(object sender, RoutedEventArgs e)
-    {
-        DeactivateTextInput();
-        _currentTool = EditToolMode.Blur;
         UpdateToolButtonStyles();
         UpdateTintOverlay();
     }
@@ -341,18 +319,12 @@ public sealed partial class EditScreenshotWindow : Window
         if (_currentTool == EditToolMode.Blur)
         {
             _blurSelectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+            var r = MakeRect(_blurSelectionStart, _blurSelectionEnd);
 
-            int x = Math.Min(_blurSelectionStart.X, _blurSelectionEnd.X);
-            int y = Math.Min(_blurSelectionStart.Y, _blurSelectionEnd.Y);
-            int w = Math.Abs(_blurSelectionEnd.X - _blurSelectionStart.X);
-            int h = Math.Abs(_blurSelectionEnd.Y - _blurSelectionStart.Y);
-
-            if (w > 5 || h > 5)
+            if (r.Width > 5 || r.Height > 5)
             {
                 RemoveBlurPreview();
-                _blurSelection = new WinRect(x, y, w, h);
-                ApplyBlur(_blurSelection);
-                _hasBlurSelection = false;
+                ApplyBlur(r);
                 UpdateTintOverlay();
             }
             else
@@ -366,16 +338,12 @@ public sealed partial class EditScreenshotWindow : Window
         if (_currentTool == EditToolMode.Select)
         {
             _selectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+            var r = MakeRect(_selectionStart, _selectionEnd);
 
-            int sx = Math.Min(_selectionStart.X, _selectionEnd.X);
-            int sy = Math.Min(_selectionStart.Y, _selectionEnd.Y);
-            int sw = Math.Abs(_selectionEnd.X - _selectionStart.X);
-            int sh = Math.Abs(_selectionEnd.Y - _selectionStart.Y);
-
-            if (sw > 5 || sh > 5)
+            if (r.Width > 5 || r.Height > 5)
             {
                 _hasSelection = true;
-                _currentSelection = new WinRect(sx, sy, sw, sh);
+                _currentSelection = r;
                 UpdateTintOverlay();
             }
             else
@@ -386,15 +354,11 @@ public sealed partial class EditScreenshotWindow : Window
         else if (_currentTool == EditToolMode.DrawBox)
         {
             _drawEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+            var r = MakeRect(_drawStart, _drawEnd);
 
-            int sx = Math.Min(_drawStart.X, _drawEnd.X);
-            int sy = Math.Min(_drawStart.Y, _drawEnd.Y);
-            int sw = Math.Abs(_drawEnd.X - _drawStart.X);
-            int sh = Math.Abs(_drawEnd.Y - _drawStart.Y);
-
-            if (sw > 5 || sh > 5)
+            if (r.Width > 5 || r.Height > 5)
             {
-                DrawRedBox(new WinRect(sx, sy, sw, sh));
+                DrawRedBox(r);
                 RemovePreview();
             }
             else
@@ -441,9 +405,21 @@ public sealed partial class EditScreenshotWindow : Window
 
     #region Tint Overlay
 
+    private static WinRect MakeRect(System.Drawing.Point a, System.Drawing.Point b)
+    {
+        int x = Math.Min(a.X, b.X);
+        int y = Math.Min(a.Y, b.Y);
+        return new WinRect(x, y, Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
+    }
+
     private void UpdateTintOverlay()
     {
-        TintCanvas.Children.Clear();
+        // Remove only tint elements, preserving drawings (boxes, arrows, text)
+        foreach (var element in _tintElements)
+        {
+            OverlayCanvas.Children.Remove(element);
+        }
+        _tintElements.Clear();
 
         bool isBlur = _currentTool == EditToolMode.Blur;
 
@@ -454,16 +430,7 @@ public sealed partial class EditScreenshotWindow : Window
 
         if (!isBlur && _isDragging)
         {
-            // Live drag preview always takes priority.
-            int sx = _selectionStart.X;
-            int sy = _selectionStart.Y;
-            int ex = _selectionEnd.X;
-            int ey = _selectionEnd.Y;
-            int x = Math.Min(sx, ex);
-            int y = Math.Min(sy, ey);
-            int w = Math.Abs(ex - sx);
-            int h = Math.Abs(ey - sy);
-            holeRect = new WinRect(x, y, w, h);
+            holeRect = MakeRect(_selectionStart, _selectionEnd);
         }
         else if (_hasSelection)
         {
@@ -471,20 +438,7 @@ public sealed partial class EditScreenshotWindow : Window
         }
         else if (isBlur && _isDragging)
         {
-            int sx = _blurSelectionStart.X;
-            int sy = _blurSelectionStart.Y;
-            int ex = _blurSelectionEnd.X;
-            int ey = _blurSelectionEnd.Y;
-            int x = Math.Min(sx, ex);
-            int y = Math.Min(sy, ey);
-            int w = Math.Abs(ex - sx);
-            int h = Math.Abs(ey - sy);
-            holeRect = new WinRect(x, y, w, h);
-            holeIsBlur = true;
-        }
-        else if (isBlur && _hasBlurSelection)
-        {
-            holeRect = _blurSelection;
+            holeRect = MakeRect(_blurSelectionStart, _blurSelectionEnd);
             holeIsBlur = true;
         }
 
@@ -492,7 +446,6 @@ public sealed partial class EditScreenshotWindow : Window
         {
             AddTintRect(0, 0, RootGrid.ActualWidth, RootGrid.ActualHeight);
             DrawSelectionBorder(_hasSelection, _currentSelection, dashed: true);
-            DrawSelectionBorder(_hasBlurSelection, _blurSelection, dashed: false);
             return;
         }
 
@@ -511,10 +464,7 @@ public sealed partial class EditScreenshotWindow : Window
 
         DrawSelectionBorder(true, sel, dashed: holeIsBlur ? false : true);
 
-        // Also draw the other selection border if it exists and isn't the hole.
-        if (!holeIsBlur && _hasBlurSelection)
-            DrawSelectionBorder(true, _blurSelection, dashed: false);
-        else if (holeIsBlur && _hasSelection)
+        if (holeIsBlur && _hasSelection)
             DrawSelectionBorder(true, _currentSelection, dashed: true);
     }
 
@@ -522,17 +472,36 @@ public sealed partial class EditScreenshotWindow : Window
     {
         if (!hasSelection) return;
 
-        var border = new ShapeRectangle
+        // Black base border
+        var blackBorder = new ShapeRectangle
+        {
+            Width = rect.Width,
+            Height = rect.Height,
+            Stroke = new SolidColorBrush(WinColor.FromArgb(255, 0, 0, 0)),
+            StrokeThickness = 1,
+            StrokeDashArray = dashed ? new DoubleCollection { 4, 4 } : null
+        };
+        Canvas.SetLeft(blackBorder, rect.X);
+        Canvas.SetTop(blackBorder, rect.Y);
+        Canvas.SetZIndex(blackBorder, 0);
+        OverlayCanvas.Children.Add(blackBorder);
+        _tintElements.Add(blackBorder);
+
+        // White dashed overlay for marching ants effect
+        var whiteBorder = new ShapeRectangle
         {
             Width = rect.Width,
             Height = rect.Height,
             Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 255, 255)),
             StrokeThickness = 1,
-            StrokeDashArray = dashed ? new DoubleCollection { 4, 4 } : null
+            StrokeDashArray = new DoubleCollection { 4, 4 },
+            StrokeDashOffset = 4
         };
-        Canvas.SetLeft(border, rect.X);
-        Canvas.SetTop(border, rect.Y);
-        TintCanvas.Children.Add(border);
+        Canvas.SetLeft(whiteBorder, rect.X);
+        Canvas.SetTop(whiteBorder, rect.Y);
+        Canvas.SetZIndex(whiteBorder, 0);
+        OverlayCanvas.Children.Add(whiteBorder);
+        _tintElements.Add(whiteBorder);
     }
 
     private void AddTintRect(double x, double y, double w, double h)
@@ -550,7 +519,9 @@ public sealed partial class EditScreenshotWindow : Window
         };
         Canvas.SetLeft(rect, x);
         Canvas.SetTop(rect, y);
-        TintCanvas.Children.Add(rect);
+        Canvas.SetZIndex(rect, 0);
+        OverlayCanvas.Children.Add(rect);
+        _tintElements.Add(rect);
     }
 
     #endregion
@@ -569,25 +540,19 @@ public sealed partial class EditScreenshotWindow : Window
             Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0)),
             StrokeThickness = 2
         };
-        DrawingCanvas.Children.Add(_previewBox);
+        Canvas.SetZIndex(_previewBox, 1);
+        OverlayCanvas.Children.Add(_previewBox);
     }
 
     private void UpdateDrawBoxPreview(double endX, double endY)
     {
-        if (_previewBox == null)
-        {
-            return;
-        }
+        if (_previewBox == null) return;
 
-        int x = Math.Min(_drawStart.X, (int)endX);
-        int y = Math.Min(_drawStart.Y, (int)endY);
-        int w = Math.Abs((int)endX - _drawStart.X);
-        int h = Math.Abs((int)endY - _drawStart.Y);
-
-        _previewBox.Width = w;
-        _previewBox.Height = h;
-        Canvas.SetLeft(_previewBox, x);
-        Canvas.SetTop(_previewBox, y);
+        var r = MakeRect(_drawStart, new System.Drawing.Point((int)endX, (int)endY));
+        _previewBox.Width = r.Width;
+        _previewBox.Height = r.Height;
+        Canvas.SetLeft(_previewBox, r.X);
+        Canvas.SetTop(_previewBox, r.Y);
     }
 
     private void EnsureArrowPreview(double startX, double startY)
@@ -607,7 +572,8 @@ public sealed partial class EditScreenshotWindow : Window
             StrokeEndLineCap = PenLineCap.Round,
             Fill = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0))
         };
-        DrawingCanvas.Children.Add(_previewArrow);
+        Canvas.SetZIndex(_previewArrow, 1);
+        OverlayCanvas.Children.Add(_previewArrow);
 
         // On the very first click show only a small arrowhead at the click point
         // oriented toward the center of the grid — no shaft yet.
@@ -617,8 +583,7 @@ public sealed partial class EditScreenshotWindow : Window
         _previewArrow.Data = BuildHeadOnlyGeometry(startX, startY, angle);
     }
 
-    /// <summary>Arrowhead triangle only (no shaft), used for the initial click preview.</summary>
-    private static Geometry BuildHeadOnlyGeometry(double tipX, double tipY, double angle)
+    private static PathFigure BuildArrowHeadFigure(double tipX, double tipY, double angle)
     {
         const double headLength = 12;
         const double headHalfWidth = 5;
@@ -630,34 +595,27 @@ public sealed partial class EditScreenshotWindow : Window
         double b2x = baseX - headHalfWidth * Math.Cos(angle + Math.PI / 2);
         double b2y = baseY - headHalfWidth * Math.Sin(angle + Math.PI / 2);
 
-        var geometry = new PathGeometry();
-        var headFigure = new PathFigure
+        var figure = new PathFigure
         {
             StartPoint = new WinPoint(tipX, tipY),
             IsClosed = true,
             IsFilled = true
         };
-        headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b1x, b1y) });
-        headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b2x, b2y) });
-        geometry.Figures.Add(headFigure);
+        figure.Segments.Add(new LineSegment { Point = new WinPoint(b1x, b1y) });
+        figure.Segments.Add(new LineSegment { Point = new WinPoint(b2x, b2y) });
+        return figure;
+    }
 
+    private static Geometry BuildHeadOnlyGeometry(double tipX, double tipY, double angle)
+    {
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(BuildArrowHeadFigure(tipX, tipY, angle));
         return geometry;
     }
 
     private static Geometry BuildArrowGeometry(double startX, double startY, double endX, double endY)
     {
-        const double headLength = 12;
-        const double headHalfWidth = 5;
         double angle = Math.Atan2(endY - startY, endX - startX);
-
-        double tipX = endX;
-        double tipY = endY;
-        double baseX = endX - headLength * Math.Cos(angle);
-        double baseY = endY - headLength * Math.Sin(angle);
-        double b1x = baseX + headHalfWidth * Math.Cos(angle + Math.PI / 2);
-        double b1y = baseY + headHalfWidth * Math.Sin(angle + Math.PI / 2);
-        double b2x = baseX - headHalfWidth * Math.Cos(angle + Math.PI / 2);
-        double b2y = baseY - headHalfWidth * Math.Sin(angle + Math.PI / 2);
 
         var geometry = new PathGeometry();
 
@@ -666,21 +624,12 @@ public sealed partial class EditScreenshotWindow : Window
             StartPoint = new WinPoint(startX, startY),
             IsClosed = false
         };
-        shaftFigure.Segments.Add(new LineSegment
-        {
-            Point = new WinPoint(baseX, baseY)
-        });
+        double baseX = endX - 12 * Math.Cos(angle);
+        double baseY = endY - 12 * Math.Sin(angle);
+        shaftFigure.Segments.Add(new LineSegment { Point = new WinPoint(baseX, baseY) });
         geometry.Figures.Add(shaftFigure);
 
-        var headFigure = new PathFigure
-        {
-            StartPoint = new WinPoint(tipX, tipY),
-            IsClosed = true,
-            IsFilled = true
-        };
-        headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b1x, b1y) });
-        headFigure.Segments.Add(new LineSegment { Point = new WinPoint(b2x, b2y) });
-        geometry.Figures.Add(headFigure);
+        geometry.Figures.Add(BuildArrowHeadFigure(endX, endY, angle));
 
         return geometry;
     }
@@ -708,12 +657,12 @@ public sealed partial class EditScreenshotWindow : Window
     {
         if (_previewBox != null)
         {
-            DrawingCanvas.Children.Remove(_previewBox);
+            OverlayCanvas.Children.Remove(_previewBox);
             _previewBox = null;
         }
         if (_previewArrow != null)
         {
-            DrawingCanvas.Children.Remove(_previewArrow);
+            OverlayCanvas.Children.Remove(_previewArrow);
             _previewArrow = null;
         }
     }
@@ -723,37 +672,56 @@ public sealed partial class EditScreenshotWindow : Window
         if (_previewBlur != null)
             return;
 
+        // Outer black border (1px solid)
         _previewBlur = new ShapeRectangle
+        {
+            Stroke = new SolidColorBrush(WinColor.FromArgb(255, 0, 0, 0)),
+            StrokeThickness = 1
+        };
+        Canvas.SetZIndex(_previewBlur, 1);
+        OverlayCanvas.Children.Add(_previewBlur);
+
+        // Inner white border (1px solid) with white tint fill
+        _previewBlurWhite = new ShapeRectangle
         {
             Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 255, 255)),
             StrokeThickness = 1,
             Fill = new SolidColorBrush(WinColor.FromArgb(60, 255, 255, 255))
         };
-        DrawingCanvas.Children.Add(_previewBlur);
+        Canvas.SetZIndex(_previewBlurWhite, 1);
+        OverlayCanvas.Children.Add(_previewBlurWhite);
     }
 
     private void UpdateBlurPreview(double endX, double endY)
     {
-        if (_previewBlur == null)
-            return;
+        if (_previewBlur == null) return;
 
-        int x = Math.Min(_blurSelectionStart.X, (int)endX);
-        int y = Math.Min(_blurSelectionStart.Y, (int)endY);
-        int w = Math.Abs((int)endX - _blurSelectionStart.X);
-        int h = Math.Abs((int)endY - _blurSelectionStart.Y);
+        var r = MakeRect(_blurSelectionStart, new System.Drawing.Point((int)endX, (int)endY));
+        _previewBlur.Width = r.Width;
+        _previewBlur.Height = r.Height;
+        Canvas.SetLeft(_previewBlur, r.X);
+        Canvas.SetTop(_previewBlur, r.Y);
 
-        _previewBlur.Width = w;
-        _previewBlur.Height = h;
-        Canvas.SetLeft(_previewBlur, x);
-        Canvas.SetTop(_previewBlur, y);
+        if (_previewBlurWhite != null)
+        {
+            _previewBlurWhite.Width = Math.Max(0, r.Width - 2);
+            _previewBlurWhite.Height = Math.Max(0, r.Height - 2);
+            Canvas.SetLeft(_previewBlurWhite, r.X + 1);
+            Canvas.SetTop(_previewBlurWhite, r.Y + 1);
+        }
     }
 
     private void RemoveBlurPreview()
     {
         if (_previewBlur != null)
         {
-            DrawingCanvas.Children.Remove(_previewBlur);
+            OverlayCanvas.Children.Remove(_previewBlur);
             _previewBlur = null;
+        }
+        if (_previewBlurWhite != null)
+        {
+            OverlayCanvas.Children.Remove(_previewBlurWhite);
+            _previewBlurWhite = null;
         }
     }
 
@@ -768,7 +736,8 @@ public sealed partial class EditScreenshotWindow : Window
         };
         Canvas.SetLeft(rect, bounds.X);
         Canvas.SetTop(rect, bounds.Y);
-        DrawingCanvas.Children.Add(rect);
+        Canvas.SetZIndex(rect, 1);
+        OverlayCanvas.Children.Add(rect);
     }
 
     private void DrawRedArrow(System.Drawing.Point start, System.Drawing.Point end)
@@ -782,16 +751,32 @@ public sealed partial class EditScreenshotWindow : Window
             Fill = new SolidColorBrush(WinColor.FromArgb(255, 255, 0, 0)),
             Data = BuildArrowGeometry(start.X, start.Y, end.X, end.Y)
         };
-        DrawingCanvas.Children.Add(path);
+        Canvas.SetZIndex(path, 1);
+        OverlayCanvas.Children.Add(path);
     }
 
     private void ApplyBlur(WinRect selection)
     {
-        double scaleX = _screenshotBitmap.Width / RootGrid.ActualWidth;
-        double scaleY = _screenshotBitmap.Height / RootGrid.ActualHeight;
+        // Get the actual image display area
+        double imageWidth = ScreenshotImage.ActualWidth;
+        double imageHeight = ScreenshotImage.ActualHeight;
+        double gridWidth = RootGrid.ActualWidth;
+        double gridHeight = RootGrid.ActualHeight;
 
-        int bmpX = Math.Max(0, (int)(selection.X * scaleX));
-        int bmpY = Math.Max(0, (int)(selection.Y * scaleY));
+        // Calculate image offset (image is centered)
+        double imageOffsetX = (gridWidth - imageWidth) / 2;
+        double imageOffsetY = (gridHeight - imageHeight) / 2;
+
+        // Adjust selection coordinates relative to the image
+        double relX = selection.X - imageOffsetX;
+        double relY = selection.Y - imageOffsetY;
+
+        // Map to bitmap coordinates
+        double scaleX = _screenshotBitmap.Width / imageWidth;
+        double scaleY = _screenshotBitmap.Height / imageHeight;
+
+        int bmpX = Math.Max(0, (int)(relX * scaleX));
+        int bmpY = Math.Max(0, (int)(relY * scaleY));
         int bmpW = Math.Min((int)(selection.Width * scaleX), _screenshotBitmap.Width - bmpX);
         int bmpH = Math.Min((int)(selection.Height * scaleY), _screenshotBitmap.Height - bmpY);
 
@@ -935,7 +920,7 @@ public sealed partial class EditScreenshotWindow : Window
 
         if (_activeTextGroup?.CursorRect != null)
         {
-            DrawingCanvas.Children.Remove(_activeTextGroup.CursorRect);
+            OverlayCanvas.Children.Remove(_activeTextGroup.CursorRect);
             _activeTextGroup.CursorRect = null;
         }
 
@@ -947,7 +932,7 @@ public sealed partial class EditScreenshotWindow : Window
     {
         foreach (var tb in group.TextBlocks)
         {
-            DrawingCanvas.Children.Remove(tb);
+            OverlayCanvas.Children.Remove(tb);
         }
         group.TextBlocks.Clear();
 
@@ -962,7 +947,8 @@ public sealed partial class EditScreenshotWindow : Window
             };
             Canvas.SetLeft(textBlock, group.X);
             Canvas.SetTop(textBlock, group.Y + i * (group.FontSize + 4));
-            DrawingCanvas.Children.Add(textBlock);
+            Canvas.SetZIndex(textBlock, 1);
+            OverlayCanvas.Children.Add(textBlock);
             group.TextBlocks.Add(textBlock);
         }
 
@@ -976,7 +962,7 @@ public sealed partial class EditScreenshotWindow : Window
     {
         if (group.CursorRect != null)
         {
-            DrawingCanvas.Children.Remove(group.CursorRect);
+            OverlayCanvas.Children.Remove(group.CursorRect);
             group.CursorRect = null;
         }
 
@@ -992,7 +978,8 @@ public sealed partial class EditScreenshotWindow : Window
         };
         Canvas.SetLeft(group.CursorRect, cursorX);
         Canvas.SetTop(group.CursorRect, cursorY);
-        DrawingCanvas.Children.Add(group.CursorRect);
+        Canvas.SetZIndex(group.CursorRect, 1);
+        OverlayCanvas.Children.Add(group.CursorRect);
         _cursorVisible = true;
     }
 
@@ -1175,18 +1162,20 @@ public sealed partial class EditScreenshotWindow : Window
 
     #region Action Buttons
 
-    private void CopyButton_Click(object sender, RoutedEventArgs e)
+    private async void CopyButton_Click(object sender, RoutedEventArgs e)
     {
         if (!_hasSelection)
             return;
 
-        CopySelectionToClipboard();
-        Close();
-    }
+        await CopySelectionToClipboardAsync();
 
-    private void CopyTextButton_Click(object sender, RoutedEventArgs e)
-    {
-        // TODO: Implement OCR text copy later
+        // Restore original bitmap so the image can be edited again later
+        using (var g = Graphics.FromImage(_screenshotBitmap))
+        {
+            g.DrawImage(_originalBitmap, 0, 0);
+        }
+
+        Close();
     }
 
     private async void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -1295,8 +1284,9 @@ public sealed partial class EditScreenshotWindow : Window
                 {
                     if (_hasSelection)
                     {
-                        CopySelectionToClipboard();
-                        Close();
+                        _ = CopyAndCloseAsync();
+                        e.Handled = true;
+                        return;
                     }
                 }
                 break;
@@ -1324,101 +1314,174 @@ public sealed partial class EditScreenshotWindow : Window
 
     #region Clipboard and Save
 
-    private void CopySelectionToClipboard()
+    private async Task CopySelectionToClipboardAsync()
     {
-        using var bitmapToCopy = CropBitmap(_currentSelection);
+        using var renderedBitmap = await RenderCanvasToBitmap();
+        using var bitmapToCopy = CropFromBitmap(renderedBitmap, _currentSelection);
 
-        var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        // Encode as PNG to memory stream
+        using var memStream = new MemoryStream();
+        bitmapToCopy.Save(memStream, System.Drawing.Imaging.ImageFormat.Png);
+        memStream.Position = 0;
 
-        if (!NativeMethods.OpenClipboard(hWnd))
-            return;
+        // Convert to RandomAccessStream
+        var randomAccessStream = new global::Windows.Storage.Streams.InMemoryRandomAccessStream();
+        using var writer = new global::Windows.Storage.Streams.DataWriter(randomAccessStream.GetOutputStreamAt(0));
+        var bytes = memStream.ToArray();
+        writer.WriteBytes(bytes);
+        await writer.StoreAsync();
+        await randomAccessStream.FlushAsync();
+        randomAccessStream.Seek(0);
+
+        var dataPackage = new global::Windows.ApplicationModel.DataTransfer.DataPackage();
+        dataPackage.SetBitmap(global::Windows.Storage.Streams.RandomAccessStreamReference.CreateFromStream(randomAccessStream));
+        global::Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dataPackage);
+    }
+
+    private async Task CopyAndCloseAsync()
+    {
+        await CopySelectionToClipboardAsync();
+        Close();
+    }
+
+    private async Task<Bitmap> RenderCanvasToBitmap()
+    {
+        // Start with a copy of the current (blurred) screenshot
+        var result = (Bitmap)_screenshotBitmap.Clone();
+
+        // Hide tint elements so they don't render into the output
+        foreach (var tint in _tintElements)
+        {
+            tint.Opacity = 0;
+        }
+
+        // OverlayCanvas is a Canvas inside RootGrid with no explicit size, so
+        // RenderTargetBitmap would measure it as 0x0 and render nothing.
+        // Temporarily give it the grid's size and force a layout pass so the
+        // annotation children (arrows, boxes, text) are measured, arranged, and
+        // rasterized. Without the Measure/Arrange, RenderAsync still sees the
+        // stale empty layout and would render nothing.
+        OverlayCanvas.Width = RootGrid.ActualWidth;
+        OverlayCanvas.Height = RootGrid.ActualHeight;
 
         try
         {
-            NativeMethods.EmptyClipboard();
+            var renderTarget = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
 
-            using var dibStream = new MemoryStream();
-            var dibData = ConvertToDib(bitmapToCopy);
-            dibStream.Write(dibData, 0, dibData.Length);
-            dibStream.Position = 0;
+            // Force the canvas to re-layout at its new explicit size before
+            // rasterizing. This ensures the annotation children render.
+            OverlayCanvas.Measure(new WinSize(RootGrid.ActualWidth, RootGrid.ActualHeight));
+            OverlayCanvas.Arrange(new WinRect(0, 0, RootGrid.ActualWidth, RootGrid.ActualHeight));
+            OverlayCanvas.UpdateLayout();
 
-            var hGlobal = Marshal.AllocHGlobal(dibData.Length);
-            Marshal.Copy(dibData, 0, hGlobal, dibData.Length);
+            await renderTarget.RenderAsync(OverlayCanvas);
 
-            NativeMethods.SetClipboardData(8 /* CF_DIB */, hGlobal);
-            // hGlobal is now owned by the clipboard; do not free it.
+            // Get pixel data from the rendered canvas
+            var pixelBuffer = await renderTarget.GetPixelsAsync();
+            using var dataReader = global::Windows.Storage.Streams.DataReader.FromBuffer(pixelBuffer);
+            byte[] canvasPixels = new byte[pixelBuffer.Length];
+            dataReader.ReadBytes(canvasPixels);
+
+            int canvasWidth = renderTarget.PixelWidth;
+            int canvasHeight = renderTarget.PixelHeight;
+
+            if (canvasWidth == 0 || canvasHeight == 0)
+                return result;
+
+            // Create a bitmap from the canvas pixels
+            using var canvasBitmap = new Bitmap(canvasWidth, canvasHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            var canvasData = canvasBitmap.LockBits(
+                new System.Drawing.Rectangle(0, 0, canvasWidth, canvasHeight),
+                ImageLockMode.WriteOnly,
+                System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+            // RenderTargetBitmap gives BGRA, System.Drawing expects the same on Windows
+            System.Runtime.InteropServices.Marshal.Copy(canvasPixels, 0, canvasData.Scan0, canvasPixels.Length);
+            canvasBitmap.UnlockBits(canvasData);
+
+            // Calculate where the image is positioned on the canvas (accounting for centering)
+            double imageWidth = ScreenshotImage.ActualWidth;
+            double imageHeight = ScreenshotImage.ActualHeight;
+            double gridWidth = RootGrid.ActualWidth;
+            double gridHeight = RootGrid.ActualHeight;
+
+            double imageOffsetX = (gridWidth - imageWidth) / 2;
+            double imageOffsetY = (gridHeight - imageHeight) / 2;
+
+            // Draw only the image area from the canvas onto the bitmap.
+            // AlphaBlend so that transparent canvas pixels leave the screenshot untouched.
+            using (var g = Graphics.FromImage(result))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
+
+                // Source rectangle: the image area on the canvas
+                var srcRect = new System.Drawing.Rectangle(
+                    (int)(imageOffsetX * canvasWidth / gridWidth),
+                    (int)(imageOffsetY * canvasHeight / gridHeight),
+                    (int)(imageWidth * canvasWidth / gridWidth),
+                    (int)(imageHeight * canvasHeight / gridHeight));
+
+                // Destination rectangle: the entire bitmap
+                var destRect = new System.Drawing.Rectangle(0, 0, result.Width, result.Height);
+
+                g.DrawImage(canvasBitmap, destRect, srcRect, GraphicsUnit.Pixel);
+            }
         }
         finally
         {
-            NativeMethods.CloseClipboard();
+            // Restore tint elements visibility
+            foreach (var tint in _tintElements)
+            {
+                tint.Opacity = 1;
+            }
+            OverlayCanvas.Width = double.NaN;
+            OverlayCanvas.Height = double.NaN;
         }
+
+        return result;
     }
 
-    private static byte[] ConvertToDib(Bitmap bitmap)
+    private Bitmap CropFromBitmap(Bitmap source, WinRect selection)
     {
-        using var bmp = new Bitmap(bitmap);
-        var bmpData = bmp.LockBits(
-            new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height),
-            ImageLockMode.ReadOnly,
-            PixelFormat.Format32bppArgb);
+        double scaleX = source.Width / RootGrid.ActualWidth;
+        double scaleY = source.Height / RootGrid.ActualHeight;
 
-        try
+        int bmpX = Math.Max(0, (int)(selection.X * scaleX));
+        int bmpY = Math.Max(0, (int)(selection.Y * scaleY));
+        int bmpW = Math.Min((int)(selection.Width * scaleX), source.Width - bmpX);
+        int bmpH = Math.Min((int)(selection.Height * scaleY), source.Height - bmpY);
+
+        if (bmpW <= 0 || bmpH <= 0)
         {
-            int colorTableSize = 0;
-            int headerSize = 40; // BITMAPINFOHEADER
-            int imageSize = Math.Abs(bmpData.Stride) * bmp.Height;
-            int totalSize = headerSize + imageSize;
-            var dib = new byte[totalSize];
-
-            // BITMAPINFOHEADER
-            BitConverter.GetBytes(headerSize).CopyTo(dib, 0);
-            BitConverter.GetBytes(bmp.Width).CopyTo(dib, 4);
-            BitConverter.GetBytes(bmp.Height).CopyTo(dib, 8); // positive = bottom-up
-            BitConverter.GetBytes((short)1).CopyTo(dib, 12);
-            BitConverter.GetBytes((short)32).CopyTo(dib, 14);
-            BitConverter.GetBytes(0).CopyTo(dib, 16); // BI_RGB
-            BitConverter.GetBytes(imageSize).CopyTo(dib, 20);
-            BitConverter.GetBytes(0).CopyTo(dib, 24); // XPelsPerMeter
-            BitConverter.GetBytes(0).CopyTo(dib, 28); // YPelsPerMeter
-            BitConverter.GetBytes(0).CopyTo(dib, 32); // ColorsUsed
-            BitConverter.GetBytes(0).CopyTo(dib, 36); // ColorsImportant
-
-            // Pixel data
-            Marshal.Copy(bmpData.Scan0, dib, headerSize, imageSize);
-
-            return dib;
+            return (Bitmap)source.Clone();
         }
-        finally
+
+        var cropped = new Bitmap(bmpW, bmpH, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(cropped))
         {
-            bmp.UnlockBits(bmpData);
+            g.DrawImage(source,
+                new System.Drawing.Rectangle(0, 0, bmpW, bmpH),
+                new System.Drawing.Rectangle(bmpX, bmpY, bmpW, bmpH),
+                GraphicsUnit.Pixel);
         }
-    }
 
-    private static class NativeMethods
-    {
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool OpenClipboard(IntPtr hWndNewOwner);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool CloseClipboard();
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool EmptyClipboard();
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+        return cropped;
     }
 
     private async Task SaveSelectionAsync()
     {
+        // Render canvas elements (boxes, arrows, text) onto a working bitmap
+        using var renderedBitmap = await RenderCanvasToBitmap();
+
         Bitmap bitmapToSave;
         if (_hasSelection)
         {
-            bitmapToSave = CropBitmap(_currentSelection);
+            bitmapToSave = CropFromBitmap(renderedBitmap, _currentSelection);
         }
         else
         {
-            bitmapToSave = (Bitmap)_screenshotBitmap.Clone();
+            bitmapToSave = (Bitmap)renderedBitmap.Clone();
         }
 
         try
@@ -1427,38 +1490,8 @@ public sealed partial class EditScreenshotWindow : Window
         }
         finally
         {
-            if (_hasSelection)
-            {
-                bitmapToSave.Dispose();
-            }
+            bitmapToSave.Dispose();
         }
-    }
-
-    private Bitmap CropBitmap(WinRect selection)
-    {
-        double scaleX = _screenshotBitmap.Width / RootGrid.ActualWidth;
-        double scaleY = _screenshotBitmap.Height / RootGrid.ActualHeight;
-
-        int bmpX = Math.Max(0, (int)(selection.X * scaleX));
-        int bmpY = Math.Max(0, (int)(selection.Y * scaleY));
-        int bmpW = Math.Min((int)(selection.Width * scaleX), _screenshotBitmap.Width - bmpX);
-        int bmpH = Math.Min((int)(selection.Height * scaleY), _screenshotBitmap.Height - bmpY);
-
-        if (bmpW <= 0 || bmpH <= 0)
-        {
-            return (Bitmap)_screenshotBitmap.Clone();
-        }
-
-        var cropped = new Bitmap(bmpW, bmpH, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(cropped))
-        {
-            g.DrawImage(_screenshotBitmap,
-                new System.Drawing.Rectangle(0, 0, bmpW, bmpH),
-                new System.Drawing.Rectangle(bmpX, bmpY, bmpW, bmpH),
-                GraphicsUnit.Pixel);
-        }
-
-        return cropped;
     }
 
     #endregion

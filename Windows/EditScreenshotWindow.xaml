@@ -197,6 +197,14 @@
 				</Button>
 
 				<Button
+                    x:Name="ColorPickerButton"
+                    Style="{StaticResource SubtleButtonStyle}"
+                    ToolTipService.ToolTip="Copy Color"
+                    Click="ColorPickerButton_Click">
+					<FontIcon Glyph="&#xE790;" FontSize="16" />
+				</Button>
+
+				<Button
                     x:Name="SaveButton"
                     Style="{StaticResource SubtleButtonStyle}"
                     ToolTipService.ToolTip="Save"

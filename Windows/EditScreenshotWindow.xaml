@@ -3,6 +3,7 @@
     x:Class="Evania.Windows.EditScreenshotWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Evania.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -119,20 +120,25 @@
             BorderThickness="1">
 
 			<StackPanel x:Name="ToolbarPanel" Orientation="Horizontal" Spacing="2">
-				<StackPanel
-                    x:Name="GripIcon"
-                    Orientation="Vertical"
-                    Spacing="2"
-                    Margin="4,0,4,0"
-                    VerticalAlignment="Center"
-                    Background="Transparent"
-                    PointerPressed="GripIcon_PointerPressed"
-                    PointerMoved="GripIcon_PointerMoved"
-                    PointerReleased="GripIcon_PointerReleased">
-					<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
-					<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
-					<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" IsHitTestVisible="False" />
-				</StackPanel>
+				<controls:DragGrip
+					x:Name="GripIcon"
+					Width="18"
+					Margin="0,0,6,0"
+					Background="Transparent"
+					PointerPressed="GripIcon_PointerPressed"
+					PointerMoved="GripIcon_PointerMoved"
+					PointerReleased="GripIcon_PointerReleased">
+					<StackPanel
+						Orientation="Vertical"
+						Spacing="2"
+						HorizontalAlignment="Center"
+						VerticalAlignment="Center"
+						IsHitTestVisible="False">
+						<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" />
+						<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" />
+						<Ellipse Width="4" Height="4" Fill="#AAFFFFFF" />
+					</StackPanel>
+				</controls:DragGrip>
 
 				<ToggleButton
                     x:Name="SelectToolButton"

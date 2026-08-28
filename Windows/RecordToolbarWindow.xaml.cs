@@ -231,15 +231,22 @@ public sealed partial class RecordToolbarWindow : Window
 
     private void PauseButton_Click(object sender, RoutedEventArgs e)
     {
-        _controller.SetPaused(!_controller.IsPaused);
-        ApplyPauseState();
+        // The first press is what opens the file, so that is the point where the recorder can still
+        // refuse. The bar then stays held and explains itself through the tooltip.
+        if (_controller.SetPaused(!_controller.IsPaused))
+        {
+            ApplyPauseState();
+            return;
+        }
+
+        ToolTipService.SetToolTip(PauseButton, $"Cannot record: {_controller.Failure}");
     }
 
     private void ApplyPauseState()
     {
         bool paused = _controller.IsPaused;
         PauseGlyph.Glyph = paused ? "\uE768" : "\uE769";
-        ToolTipService.SetToolTip(PauseButton, paused ? "Resume recording" : "Pause recording");
+        ToolTipService.SetToolTip(PauseButton, paused ? "Start recording" : "Pause recording");
         RecordDot.Opacity = paused ? 0.3 : 1.0;
         ElapsedText.Text = ElapsedDisplay;
     }

@@ -281,11 +281,16 @@
                 The bar grows to fit this box, which is also how the camera gets into the video:
                 the monitor is captured whole, so whatever is drawn here is recorded. Mirrored so
                 it behaves like a mirror, as a self-view should.
+
+                A fixed 16:9 slot (matching SeedWidthDip so it spans the same width as the row)
+                rather than one refitted on every frame: measuring the row and resizing the
+                window on each bitmap change made the preview stutter, and most cameras already
+                hand back 16:9, so the box is filled with no letterbox.
             -->
             <Border
                 x:Name="CameraBox"
-                Width="240"
-                Height="135"
+                Width="340"
+                Height="191"
                 Margin="0,0,0,4"
                 Background="Black"
                 CornerRadius="4"

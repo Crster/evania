@@ -235,19 +235,19 @@
                 <Border Width="1" Background="#40FFFFFF" Margin="2,6" />
 
                 <ToggleButton
+                    x:Name="SystemAudioButton"
+                    Style="{StaticResource ToolbarToggleButtonStyle}"
+                    ToolTipService.ToolTip="Record PC sound"
+                    Click="SystemAudioButton_Click">    
+                    <FontIcon Glyph="&#xE995;" FontSize="16" />
+                </ToggleButton>
+
+                <ToggleButton
                     x:Name="MicButton"
                     Style="{StaticResource ToolbarToggleButtonStyle}"
                     ToolTipService.ToolTip="Record microphone"
                     Click="MicButton_Click">
                     <FontIcon Glyph="&#xE720;" FontSize="16" />
-                </ToggleButton>
-
-                <ToggleButton
-                    x:Name="SystemAudioButton"
-                    Style="{StaticResource ToolbarToggleButtonStyle}"
-                    ToolTipService.ToolTip="Record PC sound"
-                    Click="SystemAudioButton_Click">
-                    <FontIcon Glyph="&#xE995;" FontSize="16" />
                 </ToggleButton>
 
                 <ToggleButton

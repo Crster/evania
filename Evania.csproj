@@ -36,6 +36,15 @@
   </ItemGroup>
 
   <!--
+    Tools\EvaniaMascot.cs is the asset generator's raster helper, compiled on demand by
+    Make-Assets.ps1 with Add-Type. The SDK's default glob would otherwise pull it into the app
+    assembly as dead code.
+  -->
+  <ItemGroup>
+    <Compile Remove="Tools\**\*.cs" />
+  </ItemGroup>
+
+  <!--
     Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
     Tools extension to be activated for this project even if the Windows App SDK Nuget
     package has not yet been restored.

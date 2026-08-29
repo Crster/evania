@@ -1,4 +1,5 @@
 using System;
+using Evania.Services;
 using Evania.ViewModels;
 using Evania.Views;
 using Microsoft.UI.Windowing;
@@ -22,6 +23,8 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Root.DataContext = ViewModel;
+
+        WindowIconService.ApplyTo(this);
 
         AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
         AppWindow.Resize(new SizeInt32(1024, 768));

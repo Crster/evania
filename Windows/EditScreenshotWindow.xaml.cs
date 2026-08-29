@@ -112,6 +112,7 @@ public sealed partial class EditScreenshotWindow : Window
         _contentBounds = contentBounds ?? new System.Drawing.Rectangle(
             0, 0, screenshotBitmap.Width, screenshotBitmap.Height);
         InitializeComponent();
+        WindowIconService.ApplyTo(this);
 
         AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
 

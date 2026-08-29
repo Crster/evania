@@ -64,6 +64,12 @@ namespace Evania.Services
         /// <summary>
         /// The shell's poster frame for a video, or null when there is nothing to show yet
         /// (a file that was written moments ago is usually not decodable by the shell yet).
+        ///
+        /// SingleItem rather than VideosView: VideosView makes the shell grab a frame from
+        /// the file, but OneDrive placeholders in a synced folder (reparse-point files)
+        /// return null there, so recordings lose their posters once OneDrive picks them up.
+        /// SingleItem falls back to the shell's stored/cloud thumbnail, which is a real
+        /// JPEG poster for these files. Plain local videos still return their frame.
         /// </summary>
         public static async Task<BitmapImage?> LoadThumbnailAsync(string filePath)
         {
@@ -71,7 +77,7 @@ namespace Evania.Services
             {
                 StorageFile file = await StorageFile.GetFileFromPathAsync(filePath);
                 using StorageItemThumbnail? thumbnail =
-                    await file.GetThumbnailAsync(ThumbnailMode.VideosView, 260, ThumbnailOptions.ResizeThumbnail).AsTask();
+                    await file.GetThumbnailAsync(ThumbnailMode.SingleItem, 260, ThumbnailOptions.ResizeThumbnail).AsTask();
 
                 if (thumbnail is null || thumbnail.Size == 0)
                 {

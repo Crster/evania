@@ -120,6 +120,13 @@ namespace Evania.ViewModels
 
             if (savedPath is null)
             {
+                // Stopping while the session was still held is a cancel, not a failure: nothing was
+                // captured and the empty file the recorder opened has already been dropped.
+                if (controller.CancelledEmptySession)
+                {
+                    return;
+                }
+
                 ErrorMessage = controller.Failure
                     ?? "The recording did not finish. Close any other app that is capturing the screen and try again.";
                 return;

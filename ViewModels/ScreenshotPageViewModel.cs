@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Evania.Services;
 using Evania.Windows;
 using Windows.Storage;
@@ -27,6 +28,14 @@ namespace Evania.ViewModels
         [ObservableProperty]
         public partial string LastSavedPath { get; set; } = string.Empty;
 
+        public ScreenshotPageViewModel()
+        {
+            // Captures reach the list through the messenger rather than the return value of the
+            // button below, because the global shortcut and the tray menu trigger the very same flow
+            // with no page involved.
+            WeakReferenceMessenger.Default.Register<ScreenshotCapturedMessage>(this, (_, message) => Add(message));
+        }
+
         [RelayCommand]
         private async Task TakeScreenshotAsync()
         {
@@ -38,34 +47,29 @@ namespace Evania.ViewModels
             IsBusy = true;
             try
             {
-                ScreenshotEditResult result = await ScreenshotService.CaptureAndEditAsync(App.MainWindow);
-
-                if (result.SavedFilePath is { } savedPath)
-                {
-                    // The edit window already wrote the annotated image; show that, not the
-                    // raw capture, and treat it as saved.
-                    var savedImage = await ScreenshotService.LoadImageFromPathAsync(savedPath);
-                    Screenshots.Insert(0, new ScreenshotItem(savedImage, sourcePath: savedPath));
-                    LastSavedPath = savedPath;
-                }
-                else if (result.Bitmap is { } bitmap)
-                {
-                    var image = await ScreenshotService.ToBitmapImageAsync(bitmap);
-                    var item = new ScreenshotItem(bitmap, image);
-                    Screenshots.Insert(0, item);
-                }
-                else
-                {
-                    return;
-                }
-
-                HasScreenshots = true;
-                IsEmpty = false;
+                await CaptureFlowService.RunAsync();
             }
             finally
             {
                 IsBusy = false;
             }
+        }
+
+        private void Add(ScreenshotCapturedMessage message)
+        {
+            var item = message.Bitmap is { } bitmap
+                ? new ScreenshotItem(bitmap, message.Image)
+                : new ScreenshotItem(message.Image, sourcePath: message.SavedPath);
+
+            Screenshots.Insert(0, item);
+
+            if (message.SavedPath is { } savedPath)
+            {
+                LastSavedPath = savedPath;
+            }
+
+            HasScreenshots = true;
+            IsEmpty = false;
         }
 
         [RelayCommand]

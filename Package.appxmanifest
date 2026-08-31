@@ -4,9 +4,10 @@
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
-  IgnorableNamespaces="uap rescap systemai">
+  IgnorableNamespaces="uap uap5 rescap systemai">
 
   <Identity
     Name="6d49ca0a-c00b-4ae7-8f12-1e03f16b71c4"
@@ -43,6 +44,20 @@
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+      <!--
+        Declares the "Start with Windows" switch. A startup task rather than an HKCU Run entry so
+        the toggle lands in Task Manager > Startup apps where users expect to find and override it;
+        AutoStartService enables and disables it by TaskId. The extension lives in the uap5
+        namespace - under plain uap the manifest fails schema validation.
+      -->
+      <Extensions>
+        <uap5:Extension Category="windows.startupTask">
+          <uap5:StartupTask
+              TaskId="EvaniaStartupTask"
+              Enabled="false"
+              DisplayName="Evania" />
+        </uap5:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

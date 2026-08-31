@@ -15,12 +15,16 @@
     </Window.SystemBackdrop>
 
     <Grid x:Name="Root">
+        <!--
+            Deliberately no two-way binding on SelectedItem: when the footer gear is clicked, the
+            control puts its own settings NavigationViewItem in that property, and a binding to a
+            typed view model property hard-casts whatever arrives, killing the process on the way.
+        -->
         <NavigationView
             x:Name="NavView"
             IsBackButtonVisible="Collapsed"
             IsPaneOpen="False"
             MenuItemsSource="{x:Bind ViewModel.MenuItems}"
-            SelectedItem="{x:Bind ViewModel.SelectedMenuItem, Mode=TwoWay}"
             SelectionChanged="NavView_SelectionChanged">
             
             <NavigationView.MenuItemTemplate>

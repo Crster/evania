@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Evania.Services;
 using Evania.ViewModels;
 using Evania.Views;
@@ -19,6 +20,12 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel ViewModel { get; } = new();
 
+    /// <summary>
+    /// Set when the app is genuinely on its way out - the tray's Exit entry - so that closing the
+    /// window is allowed to mean what it usually means instead of hiding it again.
+    /// </summary>
+    public bool IsQuitting { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -35,14 +42,75 @@ public sealed partial class MainWindow : Window
         int y = displayArea.WorkArea.Y + (displayArea.WorkArea.Height - AppWindow.Size.Height) / 2;
 
         AppWindow.Move(new PointInt32(x, y));
+
+        AppWindow.Closing += AppWindow_Closing;
+
+        // The first page used to arrive through the selection binding; now the pane is the single
+        // place that knows what is selected, so the opening item has to be said out loud.
+        NavView.SelectedItem = ViewModel.MenuItems[0];
+    }
+
+    /// <summary>
+    /// Brings the window back for the user to work in. Called from the tray after the window has
+    /// been hidden - or never shown at all, for a session that started straight into the tray.
+    /// </summary>
+    public void Present()
+    {
+        AppWindow.Show();
+
+        if (AppWindow.Presenter is OverlappedPresenter presenter &&
+            presenter.State == OverlappedPresenterState.Minimized)
+        {
+            presenter.Restore();
+        }
+
+        Activate();
+
+        // Showing a window is not itself a gesture the shell treats as a request for the foreground,
+        // so a tray activation can come back underneath whatever was focused before it.
+        NativeMethods.SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+    }
+
+    /// <summary>
+    /// Shows Settings from somewhere other than the gear - the tray menu, mainly. Selecting the
+    /// settings item raises the same event a click would and lights the entry up, but a window that
+    /// started life hidden in the tray has no realised pane to ask, so navigating is what carries the
+    /// request and the selection is only the polish on it.
+    /// </summary>
+    public void NavigateToSettings()
+    {
+        Navigate(typeof(SettingsPage));
+
+        if (NavView.SettingsItem is { } settingsItem)
+        {
+            NavView.SelectedItem = settingsItem;
+        }
+    }
+
+    private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (SettingsService.Current.CloseToTray && !IsQuitting)
+        {
+            // The process has to survive this, and it does: hiding keeps the window alive, which is
+            // what keeps the dispatcher queue - and with it the tray icon and the shortcut - running.
+            args.Cancel = true;
+            sender.Hide();
+        }
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        // Take the item from the event: the two-way SelectedItem binding is not guaranteed to
-        // have reached the view model by the time this handler runs.
-        NavigationItemViewModel? item =
-            args.SelectedItem as NavigationItemViewModel ?? ViewModel.SelectedMenuItem;
+        // The footer gear arrives through this event too, flagged rather than as a menu item.
+        if (args.IsSettingsSelected)
+        {
+            Navigate(typeof(SettingsPage));
+
+            return;
+        }
+
+        // The item comes from the event: the settings entry is not one of the view model's items,
+        // and this is the one place that has to tell the two apart.
+        NavigationItemViewModel? item = args.SelectedItem as NavigationItemViewModel;
 
         Type? pageType = item?.Tag switch
         {
@@ -51,10 +119,23 @@ public sealed partial class MainWindow : Window
             _ => null
         };
 
-        if (pageType != null &&
-            NavigationPresenter.CurrentSourcePageType != pageType)
+        if (pageType != null)
+        {
+            Navigate(pageType);
+        }
+    }
+
+    private void Navigate(Type pageType)
+    {
+        if (NavigationPresenter.CurrentSourcePageType != pageType)
         {
             NavigationPresenter.Navigate(pageType);
         }
+    }
+
+    private static class NativeMethods
+    {
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
     }
 }

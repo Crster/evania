@@ -20,7 +20,8 @@ public static class WindowIconService
     private static readonly IntPtr IconSmall = new(0);
     private static readonly IntPtr IconBig = new(1);
 
-    private static readonly string IconPath =
+    // Shared with the tray icon, which has to point at the same mark from a different surface.
+    internal static readonly string IconPath =
         Path.Combine(AppContext.BaseDirectory, "Assets", "Evania.ico");
 
     // A window borrows these handles and never owns them, so the icons have to outlive every window

@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Evania.Views.SettingsPage"
+    x:Name="PageRoot"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Evania.ViewModels"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:Evania.Converters"
+    mc:Ignorable="d"
+    d:DataContext="{d:DesignInstance Type=vm:SettingsPageViewModel}"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Loaded="SettingsPage_Loaded">
+
+    <Page.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+        <!-- Card containers with comfortable internal padding -->
+        <Style x:Key="SectionCard" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="24,20" />
+            <Setter Property="Margin" Value="0,0,0,24" />
+        </Style>
+
+        <!-- Individual setting rows -->
+        <Style x:Key="SettingRow" TargetType="Grid">
+            <Setter Property="Padding" Value="0,4,0,18" />
+        </Style>
+
+        <!-- Divider lines that span the full card width -->
+        <Style x:Key="RowDivider" TargetType="Line">
+            <Setter Property="X1" Value="0" />
+            <Setter Property="X2" Value="1" />
+            <Setter Property="Y1" Value="0" />
+            <Setter Property="Y2" Value="0" />
+            <Setter Property="Stroke" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            <Setter Property="StrokeThickness" Value="1" />
+            <Setter Property="Margin" Value="-24,0,-24,0" />
+        </Style>
+
+        <!-- Section headers with breathing room -->
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,18,0,12" />
+            <Setter Property="Opacity" Value="0.9" />
+        </Style>
+
+        <!-- Setting titles -->
+        <Style x:Key="SettingTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+
+        <!-- Subtitles that fill the available width -->
+        <Style x:Key="SettingSubtitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Opacity" Value="0.6" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+        </Style>
+
+        <!-- Action buttons -->
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="MinWidth" Value="100" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="12,0" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer Padding="32,28,32,40" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
+        <StackPanel>
+
+            <!-- Error notification bar -->
+            <InfoBar
+                Severity="Warning"
+                IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
+                Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                IsClosable="True"
+                Closed="ErrorBar_Closed"
+                Margin="0,0,0,24" />
+
+            <!-- ==================== Database ==================== -->
+
+            <TextBlock Text="Database" Style="{StaticResource SectionHeader}" />
+
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel Spacing="14">
+
+                    <!-- Path row - takes full card width -->
+                    <StackPanel>
+                        <TextBlock Text="Path" Style="{StaticResource SettingTitle}" />
+                        <TextBlock
+                            Text="Full path and file name of the LiteDB database."
+                            Style="{StaticResource SettingSubtitle}" />
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,12,0,0">
+                            <TextBox
+                                x:Name="PathBox"
+                                Text="{x:Bind ViewModel.CandidatePath, Mode=TwoWay}"
+                                FontFamily="Consolas"
+                                Height="36"
+                                VerticalContentAlignment="Center"
+                                ToolTipService.ToolTip="The database file" />
+                            <Button
+                                Grid.Column="1"
+                                Content="Browse…"
+                                Style="{StaticResource ActionButton}"
+                                Click="Browse_Click" />
+                        </Grid>
+                    </StackPanel>
+
+                    <Line Style="{StaticResource RowDivider}" />
+
+                    <!-- Encrypt database toggle -->
+                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Encrypt database" Style="{StaticResource SettingTitle}" />
+                            <TextBlock
+                                Text="Protects the data file with a key Evania generates itself and keeps wrapped in Windows DPAPI, so there is no password to type or remember. It opens for your Windows account on this machine."
+                                Style="{StaticResource SettingSubtitle}" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="EncryptToggle"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            MinWidth="0"
+                            IsOn="{x:Bind ViewModel.CandidateEncryption, Mode=OneWay}"
+                            OnContent=""
+                            OffContent=""
+                            Toggled="EncryptToggle_Toggled" />
+                    </Grid>
+
+                    <Line Style="{StaticResource RowDivider}" />
+
+                    <!-- Encryption status + actions -->
+                    <Grid Style="{StaticResource SettingRow}">
+                        <StackPanel>
+                            <TextBlock>
+                                <Run Foreground="{ThemeResource SystemFillColorCautionBrush}" FontWeight="SemiBold">Connected</Run>
+                                <Run>.</Run>
+                                <Run Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontStyle="Italic">not encrypted</Run>
+                                <Run>.</Run>
+                                <Run>8 KB</Run>
+                            </TextBlock>
+                            <TextBlock
+                                Text="Applying moves the file if the path changed, then rewrites it under the key the switch asks for. A file that already exists at the new path is never overwritten."
+                                Style="{StaticResource SettingSubtitle}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                                <FontIcon
+                                    Glyph="&#xE946;"
+                                    FontSize="14"
+                                    Opacity="0.5"
+                                    VerticalAlignment="Center" />
+                                <Button
+                                    Content="Apply"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    MinWidth="100"
+                                    Height="32"
+                                    IsEnabled="{x:Bind ViewModel.NeedsApply, Mode=OneWay}"
+                                    Command="{x:Bind ViewModel.ApplyDatabaseCommand}" />
+                                <Button
+                                    Content="Recreate…"
+                                    Style="{StaticResource ActionButton}"
+                                    Click="Recreate_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ==================== General ==================== -->
+
+            <TextBlock Text="General" Style="{StaticResource SectionHeader}" />
+
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel Spacing="0">
+
+                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Start with Windows" Style="{StaticResource SettingTitle}" />
+                            <TextBlock
+                                Text="Launch Evania when you sign in. Windows lists it under Task Manager - Startup apps, where it can also be turned off."
+                                Style="{StaticResource SettingSubtitle}" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="StartWithWindowsToggle"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            MinWidth="0"
+                            IsOn="{x:Bind ViewModel.Settings.StartWithWindows, Mode=OneWay}"
+                            OnContent=""
+                            OffContent=""
+                            Toggled="StartWithWindows_Toggled" />
+                    </Grid>
+
+                    <Line Style="{StaticResource RowDivider}" />
+
+                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Close to system tray" Style="{StaticResource SettingTitle}" />
+                            <TextBlock
+                                Text="The close button hides Evania instead of ending it, leaving its icon in the tray: double-click to come back, or use Exit Evania in its menu to really quit."
+                                Style="{StaticResource SettingSubtitle}" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="CloseToTrayToggle"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            MinWidth="0"
+                            IsOn="{x:Bind ViewModel.Settings.CloseToTray, Mode=OneWay}"
+                            OnContent=""
+                            OffContent=""
+                            Toggled="CloseToTray_Toggled" />
+                    </Grid>
+
+                    <!-- Info note shown when both toggles are on -->
+                    <StackPanel
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        Margin="-4,8,0,0"
+                        Visibility="{x:Bind ViewModel.StartsHiddenInTray, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <FontIcon Glyph="&#xE946;" FontSize="14" Opacity="0.5" VerticalAlignment="Top" Margin="0,1,0,0" />
+                        <TextBlock
+                            Text="With both on, Evania starts at sign-in already in the tray - no window appears until you open it."
+                            FontSize="12"
+                            Opacity="0.6"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ==================== Screenshot ==================== -->
+
+            <TextBlock Text="Screenshot" Style="{StaticResource SectionHeader}" />
+
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel Spacing="0">
+
+                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Shortcut" Style="{StaticResource SettingTitle}" />
+                            <TextBlock
+                                Text="Takes a screenshot from anywhere in Windows. Whichever key is picked belongs to Evania while it runs."
+                                Style="{StaticResource SettingSubtitle}" />
+                        </StackPanel>
+                        <ComboBox
+                            x:Name="ShortcutCombo"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            MinWidth="200"
+                            Height="36"
+                            ItemsSource="{x:Bind ViewModel.HotkeyOptions}"
+                            DisplayMemberPath="Display"
+                            SelectedValuePath="Value"
+                            SelectedValue="{x:Bind ViewModel.SelectedHotkey, Mode=OneWay}"
+                            SelectionChanged="Shortcut_SelectionChanged" />
+                    </Grid>
+
+                    <Line Style="{StaticResource RowDivider}" />
+
+                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Auto-save" Style="{StaticResource SettingTitle}" />
+                            <TextBlock
+                                Text="{x:Bind ViewModel.AutoSaveSubtitle, Mode=OneWay}"
+                                Style="{StaticResource SettingSubtitle}" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="AutoSaveToggle"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            MinWidth="0"
+                            IsOn="{x:Bind ViewModel.Settings.AutoSaveScreenshot, Mode=OneWay}"
+                            OnContent=""
+                            OffContent=""
+                            Toggled="AutoSave_Toggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

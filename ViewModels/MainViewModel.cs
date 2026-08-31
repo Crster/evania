@@ -13,17 +13,15 @@ namespace Evania.ViewModels
 
         [ObservableProperty]
         public partial string IconGlyph { get; set; }
-
-        // Selection belongs to the NavigationView; mirroring it here would let the two bindings
-        // fight over which item is selected.
     }
 
     public partial class MainViewModel : ObservableObject
     {
         public ObservableCollection<NavigationItemViewModel> MenuItems { get; }
 
-        [ObservableProperty]
-        public partial NavigationItemViewModel? SelectedMenuItem { get; set; }
+        // Selection belongs to the NavigationView. Mirroring it here would mean holding an item the
+        // view model never made - the settings entry is the control's own - and the binding that
+        // kept the two in step would have to cast it to a type it is not.
 
         public MainViewModel()
         {
@@ -42,7 +40,6 @@ namespace Evania.ViewModels
                     IconGlyph = "\uF7EE"
                 }
             };
-            SelectedMenuItem = MenuItems[0];
         }
     }
 }

@@ -25,15 +25,21 @@ namespace Evania.Services
         /// Captures a screenshot, shows the fullscreen EditScreenshotWindow for the user to
         /// annotate/copy/save/cancel, and returns the result.
         ///
-        /// When <paramref name="mainWindow"/> is non-null, it is hidden during capture and
-        /// re-shown after the edit window closes. When null (e.g. shortcut-key invocation
-        /// with no visible MainWindow), the capture proceeds without any window management.
+        /// When <paramref name="mainWindow"/> is on screen it is hidden during capture and put back
+        /// afterwards, so the shot does not contain the app. When it is already out of the way - the
+        /// app is sitting in the tray, or was never shown - it is left exactly where it is: a capture
+        /// triggered by the global shortcut must not be the thing that pops the main window open.
         /// </summary>
         public static async Task<ScreenshotEditResult> CaptureAndEditAsync(Microsoft.UI.Xaml.Window? mainWindow = null)
         {
-            mainWindow?.AppWindow.Hide();
+            bool restoresWindow = mainWindow?.AppWindow.IsVisible ?? false;
 
-            await Task.Delay(150);
+            if (restoresWindow)
+            {
+                mainWindow!.AppWindow.Hide();
+
+                await Task.Delay(150);
+            }
 
             Bitmap bitmap = CaptureScreenshot();
 
@@ -46,7 +52,10 @@ namespace Evania.Services
 
             await closeTcs.Task;
 
-            mainWindow?.AppWindow.Show();
+            if (restoresWindow)
+            {
+                mainWindow!.AppWindow.Show();
+            }
 
             if (editWindow.IsCancelled)
             {

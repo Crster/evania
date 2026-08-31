@@ -19,7 +19,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $binRoot = Join-Path $PSScriptRoot "bin\$Platform\$Configuration"
+
+# There are usually two manifests: the build output's own and a copy inside an AppX\ layout folder
+# that an incremental build does not refresh. Recursion order reaches the AppX\ one first, which
+# registers a directory of yesterday's binaries and the app then runs code that no longer exists in
+# the sources - so take the newest, which is the one matching what was just compiled.
 $manifest = Get-ChildItem -Path $binRoot -Recurse -Filter "AppxManifest.xml" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
     Select-Object -First 1
 if (-not $manifest) {
     Write-Host "AppxManifest.xml not found under $binRoot."

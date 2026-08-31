@@ -39,9 +39,7 @@ public partial class AppSettings : ObservableObject
     public partial string DatabasePath { get; set; }
 
     /// <summary>
-    /// Whether the data file is AES-encrypted by LiteDB. There is no password to type: turning
-    /// this on makes the app generate a random key and keep it wrapped in Windows DPAPI, so the
-    /// user never has to remember or enter anything.
+    /// Whether the data file is AES-encrypted by LiteDB with a master password.
     /// </summary>
     [ObservableProperty]
     public partial bool DatabaseEncryption { get; set; }
@@ -59,17 +57,17 @@ public partial class AppSettings : ObservableObject
     public partial bool AutoSaveScreenshot { get; set; }
 
     /// <summary>
-    /// The unwrapped LiteDB key for this session, or null while encryption is off. Plainly
-    /// observable and deliberately not an <see cref="ObservableProperty"/>: it is a secret, so it
-    /// must never end up on the binding trail of a XAML element.
+    /// The master password for this session, or null while encryption is off or locked.
+    /// Plainly observable and deliberately not an <see cref="ObservableProperty"/>: it is a secret,
+    /// so it must never end up on the binding trail of a XAML element.
     /// </summary>
-    public string? DatabaseKey { get; set; }
+    public string? DatabasePassword { get; set; }
 
     /// <summary>
-    /// The key a key rotation is moving to, kept alongside <see cref="DatabaseKey"/> until the
-    /// rebuild that writes it into the data file has succeeded.
+    /// The password a rotation / change is moving to, kept alongside <see cref="DatabasePassword"/>
+    /// until the rebuild that writes it into the data file has succeeded.
     /// </summary>
-    public string? PendingDatabaseKey { get; set; }
+    public string? PendingDatabasePassword { get; set; }
 
     public AppSettings()
     {

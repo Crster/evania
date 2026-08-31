@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -39,9 +40,9 @@ namespace Evania.ViewModels
         [ObservableProperty]
         public partial string CandidatePath { get; set; }
 
-        /// <summary>The encryption switch, likewise staged until Apply.</summary>
+        /// <summary>The password typed into the box, likewise staged until Apply.</summary>
         [ObservableProperty]
-        public partial bool CandidateEncryption { get; set; }
+        public partial string CandidatePassword { get; set; } = string.Empty;
 
         [ObservableProperty]
         public partial bool IsApplying { get; set; }
@@ -52,14 +53,24 @@ namespace Evania.ViewModels
         [ObservableProperty]
         public partial string ErrorMessage { get; set; } = string.Empty;
 
-        [ObservableProperty]
-        public partial ScreenshotHotkey SelectedHotkey { get; set; }
+        /// <summary>The dropdown selection, as the option record the ComboBox actually holds.</summary>
+        public HotkeyOption SelectedHotkeyOption
+        {
+            get => field ?? HotkeyOptions[0];
+            set
+            {
+                if (SetProperty(ref field, value) && value is not null && !stagingHotkey)
+                {
+                    SetShortcut(value.Value);
+                }
+            }
+        } = null!;
+
+        private bool stagingHotkey;
 
         public SettingsPageViewModel()
         {
-            CandidatePath = Settings.DatabasePath;
-            CandidateEncryption = Settings.DatabaseEncryption;
-            SelectedHotkey = Settings.ScreenshotShortcut;
+            ResetStagingFromSettings();
 
             // Both General switches feed one sentence, and either can move from somewhere other than
             // this page - the tray menu, a corrected startup state - so the note follows the settings
@@ -75,17 +86,28 @@ namespace Evania.ViewModels
             RefreshStatus();
         }
 
+        /// <summary>
+        /// Call every time the Settings page appears. It keeps the staged path, password and dropdown
+        /// aligned with the persisted/live settings so reopening the page does not show stale values.
+        /// </summary>
+        public void ResetStagingFromSettings()
+        {
+            CandidatePath = Settings.DatabasePath;
+            CandidatePassword = Settings.DatabasePassword ?? string.Empty;
+
+            // Staged quietly: assigning the record the binding already shows must not read as a
+            // request to re-register the hotkey.
+            stagingHotkey = true;
+            SelectedHotkeyOption = HotkeyOptions.FirstOrDefault(o => o.Value == Settings.ScreenshotShortcut) ?? HotkeyOptions[0];
+            stagingHotkey = false;
+        }
+
         public bool HasError => ErrorMessage.Length > 0;
 
-        /// <summary>
-        /// Whether the key can be copied or rotated: only while the file on disk is actually open and
-        /// encrypted, which the live connection decides - not the pending switch.
-        /// </summary>
-        public bool CanManageKey => DatabaseService.Status.Connected && DatabaseService.Status.Encrypted;
-
+        /// <summary>Apply covers the path and the password, which are staged until it is clicked.</summary>
         public bool NeedsApply =>
             !string.Equals(CandidatePath.Trim(), Settings.DatabasePath, StringComparison.OrdinalIgnoreCase) ||
-            CandidateEncryption != Settings.DatabaseEncryption;
+            !string.Equals(CandidatePassword, Settings.DatabasePassword ?? string.Empty, StringComparison.Ordinal);
 
         /// <summary>
         /// True when a launch will land in the tray with no window - which only happens with both
@@ -103,7 +125,7 @@ namespace Evania.ViewModels
 
         partial void OnCandidatePathChanged(string value) => OnPropertyChanged(nameof(NeedsApply));
 
-        partial void OnCandidateEncryptionChanged(bool value) => OnPropertyChanged(nameof(NeedsApply));
+        partial void OnCandidatePasswordChanged(string value) => OnPropertyChanged(nameof(NeedsApply));
 
         [RelayCommand]
         private async Task ApplyDatabaseAsync()
@@ -113,8 +135,8 @@ namespace Evania.ViewModels
                 return;
             }
 
-            IsApplying = true;
             ErrorMessage = string.Empty;
+            IsApplying = true;
 
             // Normalise what was typed before it is compared to anything, so a stray space cannot
             // leave Apply looking needed forever.
@@ -122,71 +144,29 @@ namespace Evania.ViewModels
 
             try
             {
-                DatabaseStatus result = await DatabaseService.ApplyAsync(CandidatePath, CandidateEncryption);
+                bool passwordChanged = !string.Equals(CandidatePassword, Settings.DatabasePassword ?? string.Empty, StringComparison.Ordinal);
 
-                if (!result.Connected)
+                if (passwordChanged)
                 {
-                    ErrorMessage = result.Error ?? "The database could not be changed.";
+                    // A changed password cannot open the old file, so the database is rebuilt:
+                    // the current file is deleted and an empty one is created under the new password.
+                    bool encrypt = !string.IsNullOrEmpty(CandidatePassword);
+
+                    DatabaseStatus result = await DatabaseService.RecreateAsync(CandidatePath, encrypt, encrypt ? CandidatePassword : null);
+
+                    if (!result.Connected)
+                    {
+                        ErrorMessage = result.Error ?? "The database could not be rebuilt.";
+                    }
                 }
-            }
-            finally
-            {
-                IsApplying = false;
-                RefreshStatus();
-            }
-        }
-
-        /// <summary>
-        /// Writes a new key into the data file. Reached only from the page, which has just asked the
-        /// user to confirm that the old key stops working the moment this succeeds.
-        /// </summary>
-        public async Task RotateKeyAsync()
-        {
-            if (IsApplying)
-            {
-                return;
-            }
-
-            IsApplying = true;
-            ErrorMessage = string.Empty;
-
-            try
-            {
-                DatabaseStatus result = await DatabaseService.RotateKeyAsync();
-
-                if (!result.Connected)
+                else
                 {
-                    ErrorMessage = result.Error ?? "The key could not be replaced.";
-                }
-            }
-            finally
-            {
-                IsApplying = false;
-                RefreshStatus();
-            }
-        }
+                    DatabaseStatus result = await DatabaseService.ApplyAsync(CandidatePath, Settings.DatabaseEncryption, Settings.DatabasePassword);
 
-        /// <summary>
-        /// Starts over from an empty file in the requested state - the only way out of a database
-        /// whose key is gone. The page confirms this before calling it.
-        /// </summary>
-        public async Task RecreateAsync()
-        {
-            if (IsApplying)
-            {
-                return;
-            }
-
-            IsApplying = true;
-            ErrorMessage = string.Empty;
-
-            try
-            {
-                DatabaseStatus result = await DatabaseService.RecreateAsync(CandidatePath.Trim(), CandidateEncryption);
-
-                if (!result.Connected)
-                {
-                    ErrorMessage = result.Error ?? "The database could not be recreated.";
+                    if (!result.Connected)
+                    {
+                        ErrorMessage = result.Error ?? "The database could not be changed.";
+                    }
                 }
             }
             finally
@@ -216,11 +196,22 @@ namespace Evania.ViewModels
             await AutoStartService.SyncSettingAsync();
         }
 
-        public Task SetCloseToTrayAsync(bool enabled)
+        public async Task SetCloseToTrayAsync(bool enabled)
         {
+            bool previous = Settings.CloseToTray;
+
+            // Apply the setting in memory first so the rest of the app sees the request, but be
+            // prepared to roll it back if the tray icon cannot be created.
             Settings.CloseToTray = enabled;
 
-            return TrayIconService.SetEnabledAsync(enabled);
+            await TrayIconService.SetEnabledAsync(enabled);
+
+            // ShowAsync swallows fatal errors to keep startup safe, so inspect the result here.
+            if (enabled && !TrayIconService.IsShowing)
+            {
+                Settings.CloseToTray = previous;
+                ErrorMessage = "Evania could not show its tray icon. The setting was turned back off.";
+            }
         }
 
         public void SetAutoSave(bool enabled) => Settings.AutoSaveScreenshot = enabled;
@@ -229,13 +220,16 @@ namespace Evania.ViewModels
         {
             string? error = GlobalHotkeyService.Apply(hotkey);
 
+            stagingHotkey = true;
+            SelectedHotkeyOption = HotkeyOptions.FirstOrDefault(
+                o => o.Value == (error is null ? hotkey : GlobalHotkeyService.Registered)) ?? HotkeyOptions[0];
+            stagingHotkey = false;
+
             if (error is not null)
             {
+                // The dropdown follows SelectedHotkeyOption, so a rejected registration snaps the
+                // selection back to what is actually registered.
                 ErrorMessage = error;
-
-                // Put the dropdown back on what is actually registered, and say so by raising the
-                // change explicitly: the value never moved away from it in the settings.
-                OnPropertyChanged(nameof(SelectedHotkey));
 
                 return;
             }
@@ -248,11 +242,8 @@ namespace Evania.ViewModels
         {
             DatabaseStatus status = DatabaseService.Status;
 
-            StatusText = !status.Connected && SettingsService.DatabaseKeyUnreadable
-                ? "Not connected - the stored key was protected on another Windows account or machine."
-                : status.Description;
+            StatusText = status.Description;
 
-            OnPropertyChanged(nameof(CanManageKey));
             OnPropertyChanged(nameof(NeedsApply));
         }
     }

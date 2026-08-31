@@ -63,13 +63,10 @@
     <!--
       WinUI 3 has no tray icon, and the shell one has to live as long as the hidden window it
       stands for, so it comes from H.NotifyIcon rather than hand-rolled Shell_NotifyIcon.
-      ProtectedData is not part of the Windows shared framework (the 10.0.11 ref pack ships
-      Microsoft.Win32.Primitives/Registry only), so DPAPI needs its own package. H.NotifyIcon's
-      generated-icon support requires System.Drawing.Common 10.x, so the pin above follows the
-      runtime instead of downgrading the tray library (NU1605).
+      H.NotifyIcon's generated-icon support requires System.Drawing.Common 10.x, so the pin above
+      follows the runtime instead of downgrading the tray library (NU1605).
     -->
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
   </ItemGroup>
 
   <!--

@@ -5,7 +5,6 @@ using Evania.Services;
 using Evania.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 
@@ -13,8 +12,9 @@ namespace Evania.Views;
 
 /// <summary>
 /// The Settings page. Everything of substance lives in <see cref="SettingsPageViewModel"/>; this
-/// class holds only what needs a window or a control - the file picker, the confirmations, the
-/// clipboard, and the switches that have to tell the operating system rather than just remember.
+/// class holds only what needs a window or a control - the file picker, the password boxes, the
+/// confirmation dialogs, and the switches that have to tell the operating system rather than just
+/// remember.
 /// </summary>
 public sealed partial class SettingsPage : Page
 {
@@ -35,8 +35,37 @@ public sealed partial class SettingsPage : Page
 
     private void SettingsPage_Loaded(object sender, RoutedEventArgs e)
     {
-        loaded = true;
+        ViewModel.ResetStagingFromSettings();
+        InputToStaging();
+        SyncSwitchesToSettings();
         ViewModel.RefreshStatus();
+
+        loaded = true;
+    }
+
+    /// <summary>
+    /// Copies the live settings into the input controls that cannot be safely two-way bound to a
+    /// secret (the password box) or that need explicit re-initialisation when the page reappears.
+    /// </summary>
+    private void InputToStaging()
+    {
+        PasswordBox.Password = ViewModel.CandidatePassword;
+    }
+
+    /// <summary>
+    /// Forces the toggle switches and shortcut dropdown back to the authoritative settings values.
+    /// This prevents UI drift after a setting is rejected by the operating system or a service.
+    /// </summary>
+    private void SyncSwitchesToSettings()
+    {
+        StartWithWindowsToggle.IsOn = ViewModel.Settings.StartWithWindows;
+        CloseToTrayToggle.IsOn = ViewModel.Settings.CloseToTray;
+        AutoSaveToggle.IsOn = ViewModel.Settings.AutoSaveScreenshot;
+
+        // SelectedItem rather than SelectedValue: an enum value never survives the ComboBox's
+        // item-resolution pass (the selection comes back empty), while a record that is one of the
+        // ItemsSource items is matched by reference.
+        ShortcutCombo.SelectedItem = ViewModel.SelectedHotkeyOption;
     }
 
     private async void Browse_Click(object sender, RoutedEventArgs e)
@@ -76,109 +105,59 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void EncryptToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (loaded)
-        {
-            ViewModel.CandidateEncryption = EncryptToggle.IsOn;
-        }
-    }
-
     private async void StartWithWindows_Toggled(object sender, RoutedEventArgs e)
     {
-        if (loaded)
+        if (!loaded)
         {
-            await ViewModel.SetStartWithWindowsAsync(StartWithWindowsToggle.IsOn);
+            return;
         }
+
+        await ViewModel.SetStartWithWindowsAsync(StartWithWindowsToggle.IsOn);
+        StartWithWindowsToggle.IsOn = ViewModel.Settings.StartWithWindows;
     }
 
     private async void CloseToTray_Toggled(object sender, RoutedEventArgs e)
     {
-        if (loaded)
+        if (!loaded)
         {
-            await ViewModel.SetCloseToTrayAsync(CloseToTrayToggle.IsOn);
+            return;
         }
+
+        await ViewModel.SetCloseToTrayAsync(CloseToTrayToggle.IsOn);
+        CloseToTrayToggle.IsOn = ViewModel.Settings.CloseToTray;
     }
 
     private void AutoSave_Toggled(object sender, RoutedEventArgs e)
     {
-        if (loaded)
+        if (!loaded)
         {
-            ViewModel.SetAutoSave(AutoSaveToggle.IsOn);
+            return;
         }
+
+        ViewModel.SetAutoSave(AutoSaveToggle.IsOn);
+        AutoSaveToggle.IsOn = ViewModel.Settings.AutoSaveScreenshot;
     }
 
     private void Shortcut_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!loaded || ShortcutCombo.SelectedValue is not ScreenshotHotkey hotkey)
+        if (!loaded || ShortcutCombo.SelectedItem is not HotkeyOption option)
         {
             return;
         }
 
-        ViewModel.SetShortcut(hotkey);
-    }
+        ViewModel.SetShortcut(option.Value);
 
-    private async void CopyKey_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button button || DatabaseService.KeyForDisplay is not { } key)
+        // SetShortcut already moved SelectedHotkeyOption to the outcome - the picked key, or the
+        // registered one when Windows refused - so the control just follows it.
+        if (!ReferenceEquals(ShortcutCombo.SelectedItem, ViewModel.SelectedHotkeyOption))
         {
-            return;
-        }
-
-        var package = new DataPackage();
-        package.SetText(key);
-        Clipboard.SetContent(package);
-        Clipboard.Flush();
-
-        // Say it where the click happened; a line at the top of a long page is not feedback.
-        button.Content = "Copied";
-        await Task.Delay(1500);
-        button.Content = "Copy key";
-    }
-
-    private async void RegenerateKey_Click(object sender, RoutedEventArgs e)
-    {
-        bool confirmed = await ConfirmAsync(
-            "Regenerate the database key?",
-            "Evania will rewrite the database with a new key. The key you have copied anywhere stops "
-            + "working the moment this finishes, and the old copy of the file LiteDB keeps is left behind "
-            + "next to it.",
-            "Regenerate");
-
-        if (confirmed)
-        {
-            await ViewModel.RotateKeyAsync();
+            ShortcutCombo.SelectedItem = ViewModel.SelectedHotkeyOption;
         }
     }
 
-    private async void Recreate_Click(object sender, RoutedEventArgs e)
+    private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
     {
-        bool confirmed = await ConfirmAsync(
-            "Recreate the database?",
-            "This deletes the data file at the path above and starts a new one, in the state the "
-            + "switches above ask for. It is the way out of a database whose key is gone, and nothing "
-            + "can be recovered from the old file afterwards.",
-            "Delete and recreate");
-
-        if (confirmed)
-        {
-            await ViewModel.RecreateAsync();
-        }
-    }
-
-    private async Task<bool> ConfirmAsync(string title, string message, string action)
-    {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = title,
-            Content = message,
-            PrimaryButtonText = action,
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-        };
-
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        ViewModel.CandidatePassword = PasswordBox.Password;
     }
 
     private void ErrorBar_Closed(InfoBar sender, object args) => ViewModel.ErrorMessage = string.Empty;

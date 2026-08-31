@@ -71,8 +71,8 @@
         </Style>
     </Page.Resources>
 
-    <ScrollViewer Padding="32,28,32,40" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
-        <StackPanel>
+    <ScrollViewer Padding="40,28,40,48" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
+        <StackPanel MaxWidth="880" HorizontalAlignment="Left">
 
             <!-- Error notification bar -->
             <InfoBar
@@ -111,64 +111,53 @@
                                 Style="{StaticResource ActionButton}"
                                 Click="Browse_Click" />
                         </Grid>
+
+                        <!-- Live state of the file at that path -->
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                            <FontIcon Glyph="&#xE8F2;" FontSize="13" Opacity="0.55" VerticalAlignment="Center" />
+                            <TextBlock
+                                Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                                FontSize="12"
+                                Opacity="0.7"
+                                TextWrapping="Wrap"
+                                VerticalAlignment="Center" />
+                        </StackPanel>
                     </StackPanel>
 
                     <Line Style="{StaticResource RowDivider}" />
 
-                    <!-- Encrypt database toggle -->
-                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Encrypt database" Style="{StaticResource SettingTitle}" />
-                            <TextBlock
-                                Text="Protects the data file with a key Evania generates itself and keeps wrapped in Windows DPAPI, so there is no password to type or remember. It opens for your Windows account on this machine."
-                                Style="{StaticResource SettingSubtitle}" />
-                        </StackPanel>
-                        <ToggleSwitch
-                            x:Name="EncryptToggle"
-                            Grid.Column="1"
-                            VerticalAlignment="Center"
-                            MinWidth="0"
-                            IsOn="{x:Bind ViewModel.CandidateEncryption, Mode=OneWay}"
-                            OnContent=""
-                            OffContent=""
-                            Toggled="EncryptToggle_Toggled" />
-                    </Grid>
+                    <!-- Password row -->
+                    <StackPanel>
+                        <TextBlock Text="Password" Style="{StaticResource SettingTitle}" />
+                        <TextBlock
+                            Text="Encrypts the database. Leave empty for no encryption."
+                            Style="{StaticResource SettingSubtitle}" />
 
-                    <Line Style="{StaticResource RowDivider}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,12,0,0">
+                            <PasswordBox
+                                x:Name="PasswordBox"
+                                Height="36"
+                                PasswordRevealMode="Peek"
+                                PasswordChanged="PasswordBox_PasswordChanged" />
+                            <Button
+                                Grid.Column="1"
+                                Content="Apply"
+                                Style="{StaticResource AccentButtonStyle}"
+                                MinWidth="100"
+                                Height="32"
+                                IsEnabled="{x:Bind ViewModel.NeedsApply, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.ApplyDatabaseCommand}" />
+                        </Grid>
 
-                    <!-- Encryption status + actions -->
-                    <Grid Style="{StaticResource SettingRow}">
-                        <StackPanel>
-                            <TextBlock>
-                                <Run Foreground="{ThemeResource SystemFillColorCautionBrush}" FontWeight="SemiBold">Connected</Run>
-                                <Run>.</Run>
-                                <Run Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontStyle="Italic">not encrypted</Run>
-                                <Run>.</Run>
-                                <Run>8 KB</Run>
-                            </TextBlock>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                            <FontIcon Glyph="&#xE7BA;" FontSize="13" Opacity="0.55" VerticalAlignment="Top" Margin="0,1,0,0" />
                             <TextBlock
-                                Text="Applying moves the file if the path changed, then rewrites it under the key the switch asks for. A file that already exists at the new path is never overwritten."
-                                Style="{StaticResource SettingSubtitle}" />
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
-                                <FontIcon
-                                    Glyph="&#xE946;"
-                                    FontSize="14"
-                                    Opacity="0.5"
-                                    VerticalAlignment="Center" />
-                                <Button
-                                    Content="Apply"
-                                    Style="{StaticResource AccentButtonStyle}"
-                                    MinWidth="100"
-                                    Height="32"
-                                    IsEnabled="{x:Bind ViewModel.NeedsApply, Mode=OneWay}"
-                                    Command="{x:Bind ViewModel.ApplyDatabaseCommand}" />
-                                <Button
-                                    Content="Recreate…"
-                                    Style="{StaticResource ActionButton}"
-                                    Click="Recreate_Click" />
-                            </StackPanel>
+                                Text="Applying a changed password rebuilds the database - the current file is deleted and an empty one is protected by the new password."
+                                FontSize="12"
+                                Opacity="0.55"
+                                TextWrapping="Wrap" />
                         </StackPanel>
-                    </Grid>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
@@ -255,8 +244,6 @@
                             Height="36"
                             ItemsSource="{x:Bind ViewModel.HotkeyOptions}"
                             DisplayMemberPath="Display"
-                            SelectedValuePath="Value"
-                            SelectedValue="{x:Bind ViewModel.SelectedHotkey, Mode=OneWay}"
                             SelectionChanged="Shortcut_SelectionChanged" />
                     </Grid>
 

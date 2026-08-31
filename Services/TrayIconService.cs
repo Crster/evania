@@ -4,8 +4,6 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace Evania.Services;
 
@@ -36,11 +34,25 @@ public static class TrayIconService
             return;
         }
 
-        ImageSource image = await LoadIconAsync();
+        // IconSource has to be a real Icon, not a BitmapImage: the library resolves a BitmapImage
+        // through its UriSource via StorageFile.GetFileFromApplicationUriAsync, and a stream-decoded
+        // image has no URI to hand it - which crashes the call on the dispatcher and kills the app.
+        System.Drawing.Icon? iconImage = await Task.Run(LoadIcon);
+
+        if (iconImage is null)
+        {
+            // A missing icon is a deployment issue, not a reason to kill the app at startup. Let the
+            // Settings page report the toggle failure through IsShowing while the window stays usable.
+            System.Diagnostics.Debug.WriteLine("Tray icon file could not be loaded; tray disabled.");
+            return;
+        }
 
         var taskbar = new TaskbarIcon
         {
-            IconSource = image,
+            // Icon, not IconSource: IconSource only accepts an ImageSource, and the library turns a
+            // BitmapImage back into a file through its UriSource - which a stream-loaded image does
+            // not have, crashing startup inside GetFileFromApplicationUriAsync.
+            Icon = iconImage,
             ToolTipText = "Evania",
             // TaskbarIcon carries no menu property of its own - the menu it renders is the flyout it
             // inherits from FrameworkElement, which the library turns into a Win32 popup.
@@ -50,15 +62,23 @@ public static class TrayIconService
             DoubleClickCommand = new RelayCommand(() => OpenRequested?.Invoke()),
         };
 
+        try
+        {
+            // TaskbarIcon only builds the real Win32 tray icon from its Loaded handler, and this instance
+            // is deliberately kept out of the visual tree because its lifetime follows the setting rather
+            // than any window. Without this call the object exists, IsShowing reads true, and nothing ever
+            // appears in the notification area - which strands the app the moment the window is hidden.
+            // Efficiency mode stays off so the icon is present rather than summoned on demand.
+            taskbar.ForceCreate(enablesEfficiencyMode: false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Tray icon could not be created: {ex.Message}");
+            taskbar.Dispose();
+            return;
+        }
+
         icon = taskbar;
-
-        // TaskbarIcon only builds the real Win32 tray icon from its Loaded handler, and this instance
-        // is deliberately kept out of the visual tree because its lifetime follows the setting rather
-        // than any window. Without this call the object exists, IsShowing reads true, and nothing ever
-        // appears in the notification area - which strands the app the moment the window is hidden.
-        // Efficiency mode stays off so the icon is present rather than summoned on demand.
-        taskbar.ForceCreate(enablesEfficiencyMode: false);
-
         IsShowing = true;
     }
 
@@ -149,41 +169,22 @@ public static class TrayIconService
     }
 
     /// <summary>
-    /// Decodes the tray icon from the build output, the way <see cref="WindowIconService"/> loads it
-    /// for the title bar: this deployment puts its assets next to the manifest rather than in a
-    /// package resource index, so <c>ms-appx</c> is not a dependable address here. The ICO is what
-    /// the title bar uses; a PNG is the fallback because it is the mark at a fixed 32px.
+    /// Loads the tray icon from the ICO next to the executable - the same file the title bar uses -
+    /// or null when it is missing or unreadable. This deployment puts its assets next to the manifest
+    /// rather than in a package resource index, so <c>ms-appx</c> is not a dependable address here.
     /// </summary>
-    private static async Task<ImageSource> LoadIconAsync()
+    private static System.Drawing.Icon? LoadIcon()
     {
-        foreach (string candidate in new[] { WindowIconService.IconPath, FallbackIconPath })
+        try
         {
-            try
-            {
-                if (!File.Exists(candidate))
-                {
-                    continue;
-                }
-
-                using FileStream stream = File.OpenRead(candidate);
-
-                BitmapImage image = new();
-                await image.SetSourceAsync(stream.AsRandomAccessStream());
-
-                if (image.PixelWidth > 0)
-                {
-                    return image;
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Tray icon {candidate} did not decode: {ex.Message}");
-            }
+            return File.Exists(WindowIconService.IconPath)
+                ? new System.Drawing.Icon(WindowIconService.IconPath, 32, 32)
+                : null;
         }
-
-        return new BitmapImage();
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Tray icon did not load: {ex.Message}");
+            return null;
+        }
     }
-
-    private static string FallbackIconPath =>
-        Path.Combine(AppContext.BaseDirectory, "Assets", "Square44x44Logo.targetsize-32_altform-unplated.png");
 }

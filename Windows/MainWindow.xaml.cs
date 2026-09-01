@@ -116,6 +116,7 @@ public sealed partial class MainWindow : Window
         {
             nameof(ScreenshotPage) => typeof(ScreenshotPage),
             nameof(ScreenRecordPage) => typeof(ScreenRecordPage),
+            nameof(NotePage) => typeof(NotePage),
             _ => null
         };
 

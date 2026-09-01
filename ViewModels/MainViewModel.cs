@@ -38,6 +38,12 @@ namespace Evania.ViewModels
                     Content = "Screen Record",
                     Tag = "ScreenRecordPage",
                     IconGlyph = "\uF7EE"
+                },
+                new NavigationItemViewModel
+                {
+                    Content = "Notes",
+                    Tag = "NotePage",
+                    IconGlyph = "\uE70B"
                 }
             };
         }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Evania.Models;
 using LiteDB;
 using LiteDB.Engine;
 
@@ -51,8 +52,31 @@ public static class DatabaseService
     public static DatabaseStatus OpenFromSettings()
     {
         AppSettings settings = SettingsService.Current;
+        string? password;
 
-        return Open(settings.DatabasePath, settings.DatabaseEncryption ? settings.DatabasePassword : null);
+        try
+        {
+            password = settings.DatabaseEncryption
+                ? DatabaseCredentialVault.Read(settings.DatabasePath)
+                : null;
+        }
+        catch (Exception ex)
+        {
+            return Status = new DatabaseStatus(false, settings.DatabaseEncryption, Explain(ex), SizeOf(settings.DatabasePath));
+        }
+
+        if (settings.DatabaseEncryption && string.IsNullOrEmpty(password))
+        {
+            return Status = new DatabaseStatus(
+                false,
+                true,
+                "No database password was found in Windows Credential Manager. Enter it in Settings and apply it again.",
+                SizeOf(settings.DatabasePath));
+        }
+
+        settings.DatabasePassword = password;
+
+        return Open(settings.DatabasePath, password);
     }
 
     public static DatabaseStatus Open(string path, string? password)
@@ -97,6 +121,93 @@ public static class DatabaseService
         }
     }
 
+    public static IReadOnlyList<NoteDocument> GetNotes()
+    {
+        lock (Gate)
+        {
+            LiteDatabase database = RequireEngine();
+            ILiteCollection<NoteDocument> notes = database.GetCollection<NoteDocument>("notes");
+            notes.EnsureIndex(note => note.UpdatedAt);
+
+            return notes.FindAll().ToList();
+        }
+    }
+
+    public static NoteDocument? GetNote(ObjectId id)
+    {
+        lock (Gate)
+        {
+            return RequireEngine().GetCollection<NoteDocument>("notes").FindById(id);
+        }
+    }
+
+    public static void UpsertNote(NoteDocument note)
+    {
+        lock (Gate)
+        {
+            RequireEngine().GetCollection<NoteDocument>("notes").Upsert(note);
+        }
+    }
+
+    public static bool DeleteNote(ObjectId id)
+    {
+        lock (Gate)
+        {
+            return RequireEngine().GetCollection<NoteDocument>("notes").Delete(id);
+        }
+    }
+
+    public static double GetNoteListScrollOffset(string stateKey)
+    {
+        lock (Gate)
+        {
+            NoteListState? state = RequireEngine()
+                .GetCollection<NoteListState>("note_list_states")
+                .FindById(stateKey);
+
+            return state?.ScrollOffset ?? 0;
+        }
+    }
+
+    public static void SaveNoteListScrollOffset(string stateKey, double offset)
+    {
+        lock (Gate)
+        {
+            RequireEngine().GetCollection<NoteListState>("note_list_states").Upsert(new NoteListState
+            {
+                Key = stateKey,
+                ScrollOffset = Math.Max(0, offset),
+            });
+        }
+    }
+
+    public static void UploadNoteAttachment(string id, string fileName, Stream source)
+    {
+        lock (Gate)
+        {
+            RequireEngine().FileStorage.Upload(id, fileName, source);
+        }
+    }
+
+    public static byte[] DownloadNoteAttachment(string id)
+    {
+        lock (Gate)
+        {
+            using MemoryStream destination = new();
+            RequireEngine().FileStorage.Download(id, destination);
+
+            return destination.ToArray();
+        }
+    }
+
+    public static bool DeleteNoteAttachment(string id)
+    {
+        lock (Gate)
+        {
+            return RequireEngine().FileStorage.Delete(id);
+        }
+    }
+
     /// <summary>
     /// Makes the data file match the requested path and encryption state: relocate it, then rebuild
     /// under the target password if that differs from what the file actually answers to.
@@ -113,7 +224,7 @@ public static class DatabaseService
 
             // The running connection's password is the most reliable source for rollback: the stored
             // setting may lag behind a session-only password or a rotation that has not completed.
-            string? previousPassword = openedPassword ?? settings.DatabasePassword;
+            string? previousPassword = openedPassword ?? settings.DatabasePassword ?? ReadPassword(sourcePath);
 
             string? targetPassword = wantEncrypted
                 ? (!string.IsNullOrEmpty(newPassword) ? newPassword : previousPassword)
@@ -166,6 +277,12 @@ public static class DatabaseService
                 settings.DatabaseEncryption = wantEncrypted;
                 settings.DatabasePassword = targetPassword;
                 settings.PendingDatabasePassword = null;
+                SavePassword(path, targetPassword);
+
+                if (!SamePath(sourcePath, path))
+                {
+                    DatabaseCredentialVault.Delete(sourcePath!);
+                }
 
                 return opened;
             }
@@ -188,7 +305,7 @@ public static class DatabaseService
         {
             AppSettings settings = SettingsService.Current;
             string? targetPassword = wantEncrypted
-                ? (!string.IsNullOrEmpty(password) ? password : settings.DatabasePassword)
+                ? (!string.IsNullOrEmpty(password) ? password : settings.DatabasePassword ?? ReadPassword(path))
                 : null;
 
             try
@@ -208,6 +325,7 @@ public static class DatabaseService
                 settings.DatabaseEncryption = wantEncrypted;
                 settings.DatabasePassword = targetPassword;
                 settings.PendingDatabasePassword = null;
+                SavePassword(path, targetPassword);
 
                 return opened;
             }
@@ -253,6 +371,7 @@ public static class DatabaseService
             {
                 expectedPassword,
                 settings.DatabasePassword,
+                ReadPassword(path),
                 null,
             }
             .Distinct(PasswordComparer.Instance);
@@ -333,6 +452,21 @@ public static class DatabaseService
         openedPassword = null;
     }
 
+    private static LiteDatabase RequireEngine()
+    {
+        if (engine is null)
+        {
+            DatabaseStatus status = OpenFromSettings();
+
+            if (!status.Connected || engine is null)
+            {
+                throw new InvalidOperationException(status.Error ?? "The database is not connected.");
+            }
+        }
+
+        return engine;
+    }
+
     private static void RebuildTo(string? targetPassword)
     {
         if (engine is null)
@@ -350,6 +484,28 @@ public static class DatabaseService
         }
 
         openedPassword = targetPassword;
+    }
+
+    private static string? ReadPassword(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        return DatabaseCredentialVault.Read(path);
+    }
+
+    private static void SavePassword(string path, string? password)
+    {
+        if (string.IsNullOrEmpty(password))
+        {
+            DatabaseCredentialVault.Delete(path);
+        }
+        else
+        {
+            DatabaseCredentialVault.Write(path, password);
+        }
     }
 
     private static bool PasswordsMatch(string? a, string? b) => a is null ? b is null : a == b;

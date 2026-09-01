@@ -93,7 +93,7 @@ namespace Evania.ViewModels
         public void ResetStagingFromSettings()
         {
             CandidatePath = Settings.DatabasePath;
-            CandidatePassword = Settings.DatabasePassword ?? string.Empty;
+            CandidatePassword = DatabaseService.CurrentPassword ?? Settings.DatabasePassword ?? string.Empty;
 
             // Staged quietly: assigning the record the binding already shows must not read as a
             // request to re-register the hotkey.
@@ -107,7 +107,7 @@ namespace Evania.ViewModels
         /// <summary>Apply covers the path and the password, which are staged until it is clicked.</summary>
         public bool NeedsApply =>
             !string.Equals(CandidatePath.Trim(), Settings.DatabasePath, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(CandidatePassword, Settings.DatabasePassword ?? string.Empty, StringComparison.Ordinal);
+            !string.Equals(CandidatePassword, DatabaseService.CurrentPassword ?? Settings.DatabasePassword ?? string.Empty, StringComparison.Ordinal);
 
         /// <summary>
         /// True when a launch will land in the tray with no window - which only happens with both
@@ -144,7 +144,8 @@ namespace Evania.ViewModels
 
             try
             {
-                bool passwordChanged = !string.Equals(CandidatePassword, Settings.DatabasePassword ?? string.Empty, StringComparison.Ordinal);
+                string? currentPassword = DatabaseService.CurrentPassword ?? Settings.DatabasePassword;
+                bool passwordChanged = !string.Equals(CandidatePassword, currentPassword ?? string.Empty, StringComparison.Ordinal);
 
                 if (passwordChanged)
                 {
@@ -161,7 +162,7 @@ namespace Evania.ViewModels
                 }
                 else
                 {
-                    DatabaseStatus result = await DatabaseService.ApplyAsync(CandidatePath, Settings.DatabaseEncryption, Settings.DatabasePassword);
+                    DatabaseStatus result = await DatabaseService.ApplyAsync(CandidatePath, Settings.DatabaseEncryption, currentPassword);
 
                     if (!result.Connected)
                     {

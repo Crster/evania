@@ -57,9 +57,10 @@ public partial class AppSettings : ObservableObject
     public partial bool AutoSaveScreenshot { get; set; }
 
     /// <summary>
-    /// The master password for this session, or null while encryption is off or locked.
+    /// The master password loaded from Windows Credential Manager for this session, or null while
+    /// encryption is off or locked.
     /// Plainly observable and deliberately not an <see cref="ObservableProperty"/>: it is a secret,
-    /// so it must never end up on the binding trail of a XAML element.
+    /// so it must never end up on the binding trail of a XAML element or in settings.json.
     /// </summary>
     public string? DatabasePassword { get; set; }
 

@@ -200,6 +200,14 @@ public static class DatabaseService
         }
     }
 
+    public static string GetNoteAttachmentFileName(string id)
+    {
+        lock (Gate)
+        {
+            return RequireEngine().FileStorage.FindById(id)?.Filename ?? "attachment.bin";
+        }
+    }
+
     public static bool DeleteNoteAttachment(string id)
     {
         lock (Gate)

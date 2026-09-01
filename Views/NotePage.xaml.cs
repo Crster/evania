@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Evania.Models;
 using Evania.Services;
@@ -8,6 +11,8 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Foundation;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
@@ -28,7 +33,14 @@ public sealed partial class NotePage : Page
         InitializeComponent();
         DataContext = ViewModel;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        Editor.Paste += Editor_Paste;
+        Editor.AddHandler(
+            PointerPressedEvent,
+            new PointerEventHandler(Editor_PointerPressed),
+            true);
     }
+
+    private const string AttachmentLinkPrefix = "evania://note/attachment/";
 
     private async void NotePage_Loaded(object sender, RoutedEventArgs e)
     {
@@ -215,17 +227,7 @@ public sealed partial class NotePage : Page
             return;
         }
 
-        byte[]? bytes = await ViewModel.ReadAttachmentAsync(item);
-        if (bytes is null)
-        {
-            return;
-        }
-
-        StorageFile file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(
-            item.FileName,
-            CreationCollisionOption.GenerateUniqueName);
-        await FileIO.WriteBytesAsync(file, bytes);
-        await global::Windows.System.Launcher.LaunchFileAsync(file);
+        await OpenAttachmentAsync(item);
     }
 
     private void RemoveAttachment_Click(object sender, RoutedEventArgs e)
@@ -234,6 +236,162 @@ public sealed partial class NotePage : Page
         {
             ViewModel.RemoveAttachment(item);
         }
+    }
+
+    private async void Editor_Paste(object sender, TextControlPasteEventArgs e)
+    {
+        DataPackageView content = Clipboard.GetContent();
+
+        if (content.Contains(StandardDataFormats.StorageItems))
+        {
+            e.Handled = true;
+            IReadOnlyList<IStorageItem> items = await content.GetStorageItemsAsync();
+            foreach (IStorageItem item in items)
+            {
+                if (item is not StorageFile file)
+                {
+                    continue;
+                }
+
+                NoteAttachmentItem? attachment = await AddAttachmentAsync(file, false);
+                if (attachment is not null)
+                {
+                    InsertLink(file.Name, AttachmentLinkPrefix + attachment.Id);
+                }
+            }
+
+            return;
+        }
+
+        string? url = null;
+        if (content.Contains(StandardDataFormats.Text))
+        {
+            string text = (await content.GetTextAsync()).Trim();
+            if (IsWebUrl(text))
+            {
+                url = text;
+            }
+        }
+
+        if (url is null && content.Contains(StandardDataFormats.Html))
+        {
+            string html = await content.GetHtmlFormatAsync();
+            Match match = Regex.Match(html, "href=[\"'](?<url>https?://[^\"']+)", RegexOptions.IgnoreCase);
+            if (match.Success && IsWebUrl(match.Groups["url"].Value))
+            {
+                url = match.Groups["url"].Value;
+            }
+        }
+
+        if (url is not null)
+        {
+            e.Handled = true;
+            InsertLink(url, url);
+        }
+    }
+
+    private static bool IsWebUrl(string text) =>
+        Uri.TryCreate(text, UriKind.Absolute, out Uri? uri)
+        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private void InsertLink(string text, string url)
+    {
+        ITextSelection selection = Editor.Document.Selection;
+        int start = selection.StartPosition;
+        selection.Text = text;
+        ITextRange range = Editor.Document.GetRange(start, start + text.Length);
+        range.Link = $"\"{url}\"";
+        selection.StartPosition = selection.EndPosition = start + text.Length;
+        selection.Text = " ";
+        selection.StartPosition = selection.EndPosition = start + text.Length + 1;
+    }
+
+    private async void Editor_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        Microsoft.UI.Input.VirtualKeyStates controlState = (Microsoft.UI.Input.VirtualKeyStates)
+            Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(
+                global::Windows.System.VirtualKey.Control);
+        if (!controlState.HasFlag(Microsoft.UI.Input.VirtualKeyStates.Down))
+        {
+            return;
+        }
+
+        System.Diagnostics.Debug.WriteLine("[NotePage] Ctrl+PointerPressed detected");
+        try
+        {
+            Thickness padding = Editor.Padding;
+            global::Windows.Foundation.Point raw = e.GetCurrentPoint(Editor).Position;
+            global::Windows.Foundation.Point point = new(raw.X - padding.Left, raw.Y - padding.Top);
+            ITextRange range = Editor.Document.GetRangeFromPoint(point, PointOptions.ClientCoordinates);
+            string link = GetLinkAt(range);
+            System.Diagnostics.Debug.WriteLine($"[NotePage] Link resolved: '{link}'");
+
+            // Always swallow Ctrl+Click so the RichEditBox doesn't launch the URI itself.
+            e.Handled = true;
+
+            if (link.Length > 0)
+            {
+                await OpenLinkAsync(link);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[NotePage] Ctrl+Click failed: {ex}");
+        }
+    }
+
+    private string GetLinkAt(ITextRange range)
+    {
+        string link = string.Empty;
+        ITextRange probe = range.GetClone();
+        for (int i = 0; i < 32 && link.Length == 0; i++)
+        {
+            probe.MoveStart(TextRangeUnit.Character, -1);
+            probe.MoveEnd(TextRangeUnit.Character, 1);
+            link = probe.Link;
+        }
+
+        if (link.Length == 0)
+        {
+            range.Expand(TextRangeUnit.Word);
+            link = range.Link;
+        }
+
+        System.Diagnostics.Debug.WriteLine($"[NotePage] Raw link value: '{link}'");
+        if (link.Length >= 2 && link.StartsWith('"') && link.EndsWith('"'))
+        {
+            link = link.Substring(1, link.Length - 2);
+        }
+
+        return link;
+    }
+
+    private static async Task OpenLinkAsync(string link)
+    {
+        // Attachment links are registered to this app; launching them routes back into
+        // App.TryOpenAttachmentProtocolAsync, which opens the file with its default app.
+        if (link.StartsWith(AttachmentLinkPrefix, StringComparison.OrdinalIgnoreCase) || IsWebUrl(link))
+        {
+            System.Diagnostics.Debug.WriteLine($"[NotePage] Launching link: {link}");
+            await global::Windows.System.Launcher.LaunchUriAsync(new Uri(link));
+        }
+    }
+
+    private async Task OpenAttachmentAsync(NoteAttachmentItem item)
+    {
+        byte[]? bytes = await ViewModel.ReadAttachmentAsync(item);
+        if (bytes is null)
+        {
+            System.Diagnostics.Debug.WriteLine("[NotePage] Attachment bytes were null");
+            return;
+        }
+
+        StorageFile file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(
+            item.FileName,
+            CreationCollisionOption.GenerateUniqueName);
+        await FileIO.WriteBytesAsync(file, bytes);
+        System.Diagnostics.Debug.WriteLine($"[NotePage] Launching file: {file.Path}");
+        await global::Windows.System.Launcher.LaunchFileAsync(file);
     }
 
     private void ErrorBar_Closed(InfoBar sender, object args) => ViewModel.ClearError();
@@ -309,10 +467,10 @@ public sealed partial class NotePage : Page
         selection.CharacterFormat.Bold = FormatEffect.On;
     }
 
-    private async Task AddAttachmentAsync(StorageFile file, bool isImage)
+    private async Task<NoteAttachmentItem?> AddAttachmentAsync(StorageFile file, bool isImage)
     {
         using Stream stream = await file.OpenStreamForReadAsync();
-        await ViewModel.AddAttachmentAsync(file.Name, file.ContentType, isImage, stream);
+        return await ViewModel.AddAttachmentAsync(file.Name, file.ContentType, isImage, stream);
     }
 
     private async Task<StorageFile?> PickFileAsync(string[] extensions)

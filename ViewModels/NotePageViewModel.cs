@@ -168,11 +168,11 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         ScheduleSave();
     }
 
-    public async Task AddAttachmentAsync(string fileName, string contentType, bool isImage, System.IO.Stream source)
+    public async Task<NoteAttachmentItem?> AddAttachmentAsync(string fileName, string contentType, bool isImage, System.IO.Stream source)
     {
         if (currentNote is null)
         {
-            return;
+            return null;
         }
 
         try
@@ -185,12 +185,15 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
                 source);
 
             currentNote.Attachments.Add(attachment);
-            Attachments.Add(ToItem(attachment));
+            NoteAttachmentItem item = ToItem(attachment);
+            Attachments.Add(item);
             ScheduleSave();
+            return item;
         }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
+            return null;
         }
     }
 

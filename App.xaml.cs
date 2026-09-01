@@ -4,6 +4,8 @@ using Evania.Services;
 using Evania.Windows;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
+using Windows.ApplicationModel.Activation;
+using Windows.Storage;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -40,10 +42,18 @@ public partial class App : Application
     /// <param name="args">Details about the launch request and process.</param>
     protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
+        AppActivationArguments activatedArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
         if (RedirectToOneRunningCopy())
         {
             Environment.Exit(0);
 
+            return;
+        }
+
+        // A protocol launch is handled without touching the window; note attachment links
+        // just need the file opened in its own app, even if Evania is sitting in the tray.
+        if (await TryOpenAttachmentProtocolAsync(activatedArgs))
+        {
             return;
         }
 
@@ -77,6 +87,11 @@ public partial class App : Application
         // The database is plumbing the settings describe, and opening it takes a disk hit; nothing
         // reads from it yet, so it is not a reason to delay showing the first frame.
         _ = Task.Run(DatabaseService.OpenFromSettings);
+
+        // Attachment links clicked while this copy is alive are redirected here by the
+        // single-instance handoff above instead of starting a new process.
+        AppInstance.GetCurrent().Activated += (_, eventArgs) =>
+            _ = TryOpenAttachmentProtocolAsync(eventArgs);
 
         if (startsHiddenInTray)
         {
@@ -121,6 +136,50 @@ public partial class App : Application
     }
 
     private static void OnHotkeyInvoked() => _ = CaptureFlowService.RunAsync();
+
+    /// <summary>
+    /// Handles evania://note/attachment/{id} links: extracts the attachment and opens it
+    /// with the default app, same as the note page's Open Attachment button. Returns true
+    /// when the activation was a handled protocol link.
+    /// </summary>
+    private static async Task<bool> TryOpenAttachmentProtocolAsync(AppActivationArguments args)
+    {
+        if (args.Kind != ExtendedActivationKind.Protocol
+            || args.Data is not ProtocolActivatedEventArgs protocol
+            || !string.Equals(protocol.Uri.Scheme, "evania", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        Uri uri = protocol.Uri;
+        bool isAttachmentLink =
+            string.Equals(uri.Host, "note", StringComparison.OrdinalIgnoreCase)
+            && uri.AbsolutePath.StartsWith("/attachment/", StringComparison.OrdinalIgnoreCase);
+        if (!isAttachmentLink)
+        {
+            return false;
+        }
+
+        string id = Uri.UnescapeDataString(uri.AbsolutePath.Substring("/attachment/".Length));
+        try
+        {
+            DatabaseService.OpenFromSettings();
+            byte[] bytes = await NoteService.ReadAttachmentAsync(id);
+            string fileName = await NoteService.GetAttachmentFileNameAsync(id);
+
+            StorageFile file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(
+                fileName,
+                CreationCollisionOption.GenerateUniqueName);
+            await FileIO.WriteBytesAsync(file, bytes);
+            await global::Windows.System.Launcher.LaunchFileAsync(file);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Attachment protocol open failed: {ex.Message}");
+        }
+
+        return true;
+    }
 
     private static void HandleTrayOpen() => MainWindow?.Present();
 

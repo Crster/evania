@@ -92,6 +92,9 @@ public static class NoteService
     public static Task<byte[]> ReadAttachmentAsync(string id) =>
         Task.Run(() => DatabaseService.DownloadNoteAttachment(id));
 
+    public static Task<string> GetAttachmentFileNameAsync(string id) =>
+        Task.Run(() => DatabaseService.GetNoteAttachmentFileName(id));
+
     public static Task DeleteAsync(NoteDocument note) => Task.Run(() =>
     {
         if (!DatabaseService.DeleteNote(note.Id))

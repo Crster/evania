@@ -14,6 +14,12 @@ public sealed class NoteDocument
 
     public string RichText { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Markdown source, the editor's source of truth. Notes written before the markdown editor
+    /// only carry <see cref="RichText"/> (RTF) and open with their <see cref="PlainText"/>.
+    /// </summary>
+    public string Markdown { get; set; } = string.Empty;
+
     public string PlainText { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

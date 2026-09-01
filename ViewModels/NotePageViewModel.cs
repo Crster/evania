@@ -52,7 +52,13 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
 
     public NoteDocument? CurrentNote => currentNote;
 
-    public string CurrentRichText => currentNote?.RichText ?? string.Empty;
+    /// <summary>
+    /// Markdown source for the editor. Notes created before the markdown editor only have RTF, which
+    /// the editor cannot render, so they open with their stored plain text instead of appearing empty.
+    /// </summary>
+    public string CurrentMarkdown => currentNote is null
+        ? string.Empty
+        : currentNote.Markdown.Length > 0 ? currentNote.Markdown : currentNote.PlainText;
 
     public double CurrentEditorScrollOffset => currentNote?.EditorScrollOffset ?? 0;
 
@@ -86,7 +92,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
             removedAttachmentIds.Clear();
             IsEditing = true;
             OnPropertyChanged(nameof(CurrentNote));
-            OnPropertyChanged(nameof(CurrentRichText));
+            OnPropertyChanged(nameof(CurrentMarkdown));
             OnPropertyChanged(nameof(CurrentEditorScrollOffset));
         }
         catch (Exception ex)
@@ -123,7 +129,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
             removedAttachmentIds.Clear();
             IsEditing = true;
             OnPropertyChanged(nameof(CurrentNote));
-            OnPropertyChanged(nameof(CurrentRichText));
+            OnPropertyChanged(nameof(CurrentMarkdown));
             OnPropertyChanged(nameof(CurrentEditorScrollOffset));
         }
         catch (Exception ex)
@@ -145,14 +151,14 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         await ReloadListAsync();
     }
 
-    public void UpdateDocument(string richText, string plainText)
+    public void UpdateDocument(string markdown, string plainText)
     {
         if (loadingEditor || currentNote is null)
         {
             return;
         }
 
-        currentNote.RichText = richText;
+        currentNote.Markdown = markdown;
         currentNote.PlainText = plainText.TrimEnd('\r', '\n');
         ScheduleSave();
     }

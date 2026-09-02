@@ -703,7 +703,7 @@ public sealed partial class MarkdownEditor
 
         MarkdownEditorLog.Write($"cutting {selection.Min}..{selection.Max}");
         await CopyAsync();
-        SetSelection(document.Delete(selection));
+        DeleteSelectionPreservingTable();
     }
 
     /// <summary>
@@ -743,6 +743,19 @@ public sealed partial class MarkdownEditor
             MarkdownEditorLog.Write("clipboard is a URL, wrapping selection as a link");
             InsertLink(text.Trim(), document.GetText(selection));
             return;
+        }
+
+        TableGuardResult guard = GetTableGuard(selection, text);
+        if (guard.Blocked)
+        {
+            MarkdownEditorLog.Exit("paste refused by table protection");
+            return;
+        }
+
+        if (guard.Replacement != text)
+        {
+            MarkdownEditorLog.Write($"paste filtered by table protection to {MarkdownEditorLog.Snippet(guard.Replacement)}");
+            text = guard.Replacement;
         }
 
         SetSelection(document.Replace(selection.Min, selection.Length, text, MarkdownEditKind.Structural, selection));

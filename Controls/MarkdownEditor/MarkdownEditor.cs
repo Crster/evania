@@ -78,7 +78,11 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             ZoomMode = ZoomMode.Disabled,
             Content = canvas,
         };
-        scroller.ViewChanged += (_, _) => canvas.Invalidate();
+        scroller.ViewChanged += (_, _) =>
+        {
+            canvas.Invalidate();
+            UpdateTableToolbarPlacement();
+        };
 
         Children.Add(scroller);
 
@@ -93,6 +97,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
         InitializeTextInput();
         InitializeInput();
+        InitializeTableToolbar();
 
         MarkdownEditorLog.Write("control constructed");
     }
@@ -263,6 +268,8 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             MarkdownEditorLog.Write($"layout rebuilt, blocks={engine.Blocks.Count} totalHeight={engine.TotalHeight:F0} width={available:F0}");
             canvas.Invalidate();
         }
+
+        UpdateTableToolbar();
     }
 
     private void ApplyThemeColors()
@@ -280,6 +287,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         engine.Invalidate();
         UpdateEditorLayout();
         canvas.Invalidate();
+        ApplyTableToolbarTheme();
     }
 
     private Color GetThemeColor(string resourceKey, Color fallback)

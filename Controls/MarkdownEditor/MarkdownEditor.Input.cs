@@ -80,9 +80,23 @@ public sealed partial class MarkdownEditor
     {
         MarkdownEditorLog.Write($"insert {MarkdownEditorLog.Snippet(text)} over {selection.Min}..{selection.Max}");
 
-        TextRange result = document.Replace(selection.Min, selection.Length, text, MarkdownEditKind.Typing, selection);
+        TableGuardResult guard = GetTableGuard(selection, text);
+        if (guard.Blocked)
+        {
+            MarkdownEditorLog.Exit("edit refused by table protection");
+            return;
+        }
+
+        string insertable = guard.Replacement;
+        if (insertable.Length == 0)
+        {
+            MarkdownEditorLog.Exit("typed characters were all table structure, nothing inserted");
+            return;
+        }
+
+        TextRange result = document.Replace(selection.Min, selection.Length, insertable, MarkdownEditKind.Typing, selection);
         SetSelection(result);
-        AutoContinueList(result.End - text.Length, text);
+        AutoContinueList(result.End - insertable.Length, insertable);
     }
 
     // --- pointer ------------------------------------------------------------------------------
@@ -462,7 +476,7 @@ public sealed partial class MarkdownEditor
     {
         if (!selection.IsEmpty)
         {
-            SetSelection(document.Delete(selection));
+            DeleteSelectionPreservingTable();
             return;
         }
 
@@ -479,6 +493,15 @@ public sealed partial class MarkdownEditor
         }
 
         int start = GetAdjacentPosition(selection.End, -1);
+
+        // The pipes and row breaks of a grid-rendered table are structure, not text: they are invisible
+        // here, so deleting one breaks the table without the user being able to see why.
+        if (IsTableStructure(start, selection.End - start))
+        {
+            MarkdownEditorLog.Write($"backspace blocked on table structure at {start}");
+            return;
+        }
+
         SetSelection(document.Replace(start, selection.End - start, string.Empty, MarkdownEditKind.Deleting, selection));
     }
 
@@ -486,7 +509,7 @@ public sealed partial class MarkdownEditor
     {
         if (!selection.IsEmpty)
         {
-            SetSelection(document.Delete(selection));
+            DeleteSelectionPreservingTable();
             return;
         }
 
@@ -496,6 +519,13 @@ public sealed partial class MarkdownEditor
         }
 
         int end = GetAdjacentPosition(selection.End, 1);
+
+        if (IsTableStructure(selection.End, end - selection.End))
+        {
+            MarkdownEditorLog.Write($"delete blocked on table structure at {selection.End}");
+            return;
+        }
+
         SetSelection(document.Replace(selection.End, end - selection.End, string.Empty, MarkdownEditKind.Deleting, selection));
     }
 

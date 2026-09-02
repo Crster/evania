@@ -213,16 +213,25 @@ public sealed partial class MarkdownEditor
             int start = range.StartCaretPosition;
             int length = range.EndCaretPosition - range.StartCaretPosition;
 
-            MarkdownEditKind kind = newText.Length == 0 ? MarkdownEditKind.Deleting : MarkdownEditKind.Typing;
-            document.Replace(start, length, newText, kind, selection);
+            TableGuardResult guard = GetTableGuard(new TextRange(start, range.EndCaretPosition), newText);
+            if (guard.Blocked)
+            {
+                args.Result = CoreTextTextUpdatingResult.Failed;
+                MarkdownEditorLog.Write("text update refused: table structure cannot be edited here");
+                return;
+            }
+
+            string replacement = guard.Replacement;
+            MarkdownEditKind kind = replacement.Length == 0 ? MarkdownEditKind.Deleting : MarkdownEditKind.Typing;
+            document.Replace(start, length, replacement, kind, selection);
 
             CoreTextRange newSelection = args.NewSelection;
             TextRange resolved = newSelection.StartCaretPosition == newSelection.EndCaretPosition && newSelection.StartCaretPosition == 0
-                ? TextRange.Caret(start + newText.Length)
+                ? TextRange.Caret(start + replacement.Length)
                 : new TextRange(newSelection.StartCaretPosition, newSelection.EndCaretPosition);
 
             SetSelection(resolved);
-            AutoContinueList(start, newText);
+            AutoContinueList(start, replacement);
             args.Result = CoreTextTextUpdatingResult.Succeeded;
             MarkdownEditorLog.Write($"text update applied, caret={selection.End} docLength={document.Length}");
         }

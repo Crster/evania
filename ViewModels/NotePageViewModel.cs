@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Evania.Controls.MarkdownEditor;
 using Evania.Models;
 using Evania.Services;
 
@@ -20,8 +21,6 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
     public ObservableCollection<NoteListItem> Notes { get; } = new();
 
     public ObservableCollection<NoteAttachmentItem> Attachments { get; } = new();
-
-    public IReadOnlyList<NoteSortOrder> SortOptions { get; } = Enum.GetValues<NoteSortOrder>();
 
     [ObservableProperty]
     public partial bool IsEditing { get; set; }
@@ -61,6 +60,14 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         : currentNote.Markdown.Length > 0 ? currentNote.Markdown : currentNote.PlainText;
 
     public double CurrentEditorScrollOffset => currentNote?.EditorScrollOffset ?? 0;
+
+    public MarkdownEditorViewport CurrentEditorViewport => currentNote is null
+        ? default
+        : new MarkdownEditorViewport(
+            currentNote.EditorScrollOffset,
+            currentNote.EditorViewportHeight,
+            currentNote.EditorViewportSourcePosition,
+            currentNote.EditorViewportAnchorOffset);
 
     partial void OnTitleChanged(string value)
     {
@@ -119,6 +126,8 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
                 return;
             }
 
+            MarkdownEditorLog.Viewport($"loaded note={currentNote.Id}, offset={currentNote.EditorScrollOffset:F1}, height={currentNote.EditorViewportHeight:F1}, source={currentNote.EditorViewportSourcePosition}, anchorOffset={currentNote.EditorViewportAnchorOffset:F1}");
+
             Title = currentNote.Title;
             Attachments.Clear();
             foreach (NoteAttachment attachment in currentNote.Attachments)
@@ -163,15 +172,29 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         ScheduleSave();
     }
 
-    public void UpdateEditorScrollOffset(double offset)
+    public void UpdateEditorViewport(MarkdownEditorViewport viewport)
     {
-        if (loadingEditor || currentNote is null || Math.Abs(currentNote.EditorScrollOffset - offset) < 0.5)
+        if (loadingEditor || currentNote is null)
         {
             return;
         }
 
-        currentNote.EditorScrollOffset = Math.Max(0, offset);
+        currentNote.EditorScrollOffset = Math.Max(0, viewport.ScrollOffset);
+        currentNote.EditorViewportHeight = Math.Max(0, viewport.Height);
+        currentNote.EditorViewportSourcePosition = viewport.SourcePosition;
+        currentNote.EditorViewportAnchorOffset = viewport.AnchorOffset;
         ScheduleSave();
+    }
+
+    public async Task SaveEditorViewportAsync(MarkdownEditorViewport viewport)
+    {
+        UpdateEditorViewport(viewport);
+        if (currentNote is not null)
+        {
+            MarkdownEditorLog.Viewport($"saving note={currentNote.Id}, offset={viewport.ScrollOffset:F1}, height={viewport.Height:F1}, source={viewport.SourcePosition}, anchorOffset={viewport.AnchorOffset:F1}");
+            await NoteService.SaveViewportAsync(currentNote);
+            MarkdownEditorLog.Viewport($"save completed note={currentNote.Id}");
+        }
     }
 
     public async Task<NoteAttachmentItem?> AddAttachmentAsync(string fileName, string contentType, bool isImage, System.IO.Stream source)

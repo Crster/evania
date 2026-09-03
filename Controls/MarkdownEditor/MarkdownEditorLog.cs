@@ -42,6 +42,10 @@ internal static class MarkdownEditorLog
     internal static void Error(Exception exception, [CallerMemberName] string caller = "")
         => Write($"EXCEPTION {exception.GetType().Name}: {exception.Message}", caller);
 
+    [Conditional("DEBUG")]
+    internal static void Viewport(string message, [CallerMemberName] string caller = "")
+        => Debug.WriteLine($"[{Category}.Viewport] {caller}: {message}");
+
     /// <summary>Shortens and escapes user text so a paste of a whole note cannot flood the log.</summary>
     internal static string Snippet(string? text, int maxLength = 40)
     {

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Text;
@@ -10,6 +11,12 @@ using Windows.UI;
 using Colors = Microsoft.UI.Colors;
 
 namespace Evania.Controls.MarkdownEditor;
+
+public readonly record struct MarkdownEditorViewport(
+    double ScrollOffset,
+    double Height,
+    int SourcePosition,
+    double AnchorOffset);
 
 /// <summary>
 /// A markdown WYSIWYG editor implemented from scratch on Win2D.
@@ -40,6 +47,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     private bool suppressTextPropertyChange;
     private bool disposed;
     private float contentWidth = 600f;
+    private MarkdownEditorViewport? pendingViewport;
 
     /// <summary>
     /// Source start of the table currently shown as raw markdown, toggled by the toolbar. -1 when no
@@ -89,7 +97,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             ZoomMode = ZoomMode.Disabled,
             Content = canvas,
         };
-        scroller.ViewChanged += (_, _) =>
+        scroller.ViewChanged += (_, args) =>
         {
             canvas.Invalidate();
             UpdateTableToolbarPlacement();
@@ -98,6 +106,11 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             // scrolling leaves it pointing at empty space; the next move re-shows it over whatever
             // the cursor is really on.
             HideImageTooltip();
+
+            if (!args.IsIntermediate)
+            {
+                ViewportChanged?.Invoke(this, CaptureViewport());
+            }
         };
 
         Children.Add(scroller);
@@ -127,6 +140,8 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
     /// <summary>Raised when the user renames a link label.</summary>
     public event EventHandler<LinkRenamedEventArgs>? LinkRenamed;
+
+    public event EventHandler<MarkdownEditorViewport>? ViewportChanged;
 
     public static readonly DependencyProperty MarkdownProperty = DependencyProperty.Register(
         nameof(Markdown),
@@ -173,6 +188,66 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         get => scroller.VerticalOffset;
         set => scroller.ChangeView(null, value, null, disableAnimation: true);
     }
+
+    public MarkdownEditorViewport CaptureViewport()
+    {
+        UpdateEditorLayout();
+        BlockLayout? anchor = engine.HitTestBlock((float)scroller.VerticalOffset);
+        var viewport = new MarkdownEditorViewport(
+            scroller.VerticalOffset,
+            scroller.ViewportHeight,
+            anchor?.Block.Start ?? -1,
+            anchor is null ? 0 : anchor.Y - scroller.VerticalOffset);
+        MarkdownEditorLog.Viewport($"captured {FormatViewport(viewport)}, extent={scroller.ExtentHeight:F1}, blocks={engine.Blocks.Count}, ready={canvas.ReadyToDraw}");
+        return viewport;
+    }
+
+    public void RestoreViewport(MarkdownEditorViewport viewport)
+    {
+        MarkdownEditorLog.Viewport($"restore requested {FormatViewport(viewport)}, extent={scroller.ExtentHeight:F1}, blocks={engine.Blocks.Count}, ready={canvas.ReadyToDraw}");
+        pendingViewport = viewport;
+        UpdateEditorLayout();
+        TryRestorePendingViewport();
+    }
+
+    private void TryRestorePendingViewport()
+    {
+        if (pendingViewport is not { } viewport)
+        {
+            return;
+        }
+
+        if (!canvas.ReadyToDraw)
+        {
+            MarkdownEditorLog.Viewport($"restore waiting: pending={pendingViewport.HasValue}, ready={canvas.ReadyToDraw}, extent={scroller.ExtentHeight:F1}, blocks={engine.Blocks.Count}");
+            return;
+        }
+
+        BlockLayout? anchor = viewport.SourcePosition < 0
+            ? null
+            : engine.Blocks.FirstOrDefault(block => block.Contains(viewport.SourcePosition));
+        if (viewport.SourcePosition >= 0 && anchor is null)
+        {
+            MarkdownEditorLog.Viewport($"restore waiting for source={viewport.SourcePosition}, blocks={engine.Blocks.Count}");
+            return;
+        }
+
+        double offset = anchor is null
+            ? viewport.ScrollOffset
+            : anchor.Y - viewport.AnchorOffset;
+        double target = Math.Max(0, offset);
+        bool accepted = scroller.ChangeView(null, target, null, disableAnimation: true);
+        bool reached = Math.Abs(scroller.VerticalOffset - target) < 0.5;
+        if (reached)
+        {
+            pendingViewport = null;
+        }
+
+        MarkdownEditorLog.Viewport($"restore applied target={target:F1}, accepted={accepted}, reached={reached}, actual={scroller.VerticalOffset:F1}, extent={scroller.ExtentHeight:F1}, anchorY={anchor?.Y:F1}");
+    }
+
+    private static string FormatViewport(MarkdownEditorViewport viewport) =>
+        $"offset={viewport.ScrollOffset:F1}, height={viewport.Height:F1}, source={viewport.SourcePosition}, anchorOffset={viewport.AnchorOffset:F1}";
 
     private static void OnMarkdownPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -298,6 +373,8 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             MarkdownEditorLog.Write($"layout rebuilt, blocks={engine.Blocks.Count} totalHeight={engine.TotalHeight:F0} width={available:F0}");
             canvas.Invalidate();
         }
+
+        TryRestorePendingViewport();
 
         UpdateTableToolbar();
     }

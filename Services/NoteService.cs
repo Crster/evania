@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Evania.Controls.MarkdownEditor;
 using Evania.Models;
 using LiteDB;
 
@@ -28,6 +29,7 @@ public static class NoteService
                 NoteSortOrder.UpdatedAscending => query.OrderBy(note => note.UpdatedAt),
                 NoteSortOrder.TitleAscending => query.OrderBy(GetDisplayTitle, StringComparer.CurrentCultureIgnoreCase),
                 NoteSortOrder.TitleDescending => query.OrderByDescending(GetDisplayTitle, StringComparer.CurrentCultureIgnoreCase),
+                NoteSortOrder.CreatedDescending => query.OrderByDescending(note => note.CreatedAt),
                 _ => query.OrderByDescending(note => note.UpdatedAt),
             };
 
@@ -35,9 +37,17 @@ public static class NoteService
             {
                 Id = note.Id,
                 DisplayTitle = GetDisplayTitle(note),
-                Preview = CreatePreview(note.PlainText ?? string.Empty),
+                Preview = CreatePreview(note),
                 UpdatedAt = note.UpdatedAt,
             }).ToList();
+        });
+
+    public static Task SaveViewportAsync(NoteDocument note) =>
+        Task.Run(() =>
+        {
+            DatabaseService.UpsertNote(note);
+            NoteDocument? stored = DatabaseService.GetNote(note.Id);
+            MarkdownEditorLog.Viewport($"database note={note.Id}, offset={stored?.EditorScrollOffset:F1}, height={stored?.EditorViewportHeight:F1}, source={stored?.EditorViewportSourcePosition}, anchorOffset={stored?.EditorViewportAnchorOffset:F1}");
         });
 
     public static Task<NoteDocument?> GetAsync(ObjectId id) => Task.Run(() => DatabaseService.GetNote(id));
@@ -136,8 +146,11 @@ public static class NoteService
     public static Task SaveListScrollOffsetAsync(string stateKey, double offset) =>
         Task.Run(() => DatabaseService.SaveNoteListScrollOffset(stateKey, offset));
 
-    private static string CreatePreview(string plainText)
+    private static string CreatePreview(NoteDocument note)
     {
+        string plainText = note.EditorViewportSourcePosition >= 0 && !string.IsNullOrEmpty(note.Markdown)
+            ? MarkdownTextUtilities.ToPlainText(note.Markdown, note.EditorViewportSourcePosition)
+            : note.PlainText ?? string.Empty;
         string preview = string.Join(
             " ",
             plainText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));

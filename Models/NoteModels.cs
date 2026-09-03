@@ -28,6 +28,12 @@ public sealed class NoteDocument
 
     public double EditorScrollOffset { get; set; }
 
+    public double EditorViewportHeight { get; set; }
+
+    public int EditorViewportSourcePosition { get; set; } = -1;
+
+    public double EditorViewportAnchorOffset { get; set; }
+
     public List<NoteAttachment> Attachments { get; set; } = new();
 }
 
@@ -58,6 +64,7 @@ public enum NoteSortOrder
     UpdatedAscending,
     TitleAscending,
     TitleDescending,
+    CreatedDescending,
 }
 
 public partial class NoteListItem : ObservableObject

@@ -36,6 +36,7 @@ public sealed partial class NotePage : Page
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         Editor.ImageResolver = ResolveImageAsync;
         Editor.LinkRenamed += Editor_LinkRenamed;
+        Editor.ViewportChanged += Editor_ViewportChanged;
     }
 
     /// <summary>
@@ -72,10 +73,29 @@ public sealed partial class NotePage : Page
         await ViewModel.LoadAsync();
         await RestoreListPositionAsync();
         UpdatePanels();
+
+        // The window owns the search box in its chrome; it pushes text changes to us.
+        if (App.MainWindow is Evania.Windows.MainWindow mainWindow)
+        {
+            mainWindow.TitleBarSearchChanged += MainWindow_TitleBarSearchChanged;
+        }
+    }
+
+    private void MainWindow_TitleBarSearchChanged(object? sender, string text)
+    {
+        if (!ViewModel.IsEditing)
+        {
+            ViewModel.Filter = text;
+        }
     }
 
     private async void NotePage_Unloaded(object sender, RoutedEventArgs e)
     {
+        if (App.MainWindow is Evania.Windows.MainWindow mainWindow)
+        {
+            mainWindow.TitleBarSearchChanged -= MainWindow_TitleBarSearchChanged;
+        }
+
         await SaveScrollPositionsAsync();
         await ViewModel.FlushAsync();
     }
@@ -85,6 +105,14 @@ public sealed partial class NotePage : Page
         await SaveListPositionAsync();
         await ViewModel.NewAsync();
         LoadCurrentDocument();
+    }
+
+    private async void SortToggle_Click(object sender, RoutedEventArgs e)
+    {
+        await SaveListPositionAsync();
+        ViewModel.SelectedSort = SortToggle.IsChecked == true
+            ? NoteSortOrder.CreatedDescending
+            : NoteSortOrder.UpdatedDescending;
     }
 
     private async void Back_Click(object sender, RoutedEventArgs e)
@@ -108,6 +136,22 @@ public sealed partial class NotePage : Page
     }
 
     /// <summary>
+    /// A single tap opens a note; the list is the only content on the page, so the extra
+    /// double-tap just made opening feel delayed.
+    /// </summary>
+    private async void NoteList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is not NoteListItem item)
+        {
+            return;
+        }
+
+        await SaveListPositionAsync();
+        await ViewModel.OpenAsync(item);
+        LoadCurrentDocument();
+    }
+
+    /// <summary>
     /// The editor owns the markdown; the plain-text projection is stored alongside it for the note
     /// list previews and search.
     /// </summary>
@@ -119,6 +163,14 @@ public sealed partial class NotePage : Page
         }
 
         ViewModel.UpdateDocument(markdown, Editor.PlainText);
+    }
+
+    private async void Editor_ViewportChanged(object? sender, MarkdownEditorViewport viewport)
+    {
+        if (!loadingDocument && ViewModel.IsEditing)
+        {
+            await ViewModel.SaveEditorViewportAsync(viewport);
+        }
     }
 
     private async void Editor_LinkInvoked(object? sender, string target) => await OpenLinkAsync(target);
@@ -507,7 +559,7 @@ public sealed partial class NotePage : Page
             // wait until after that pass or the offset is clamped to a zero-height surface.
             DispatcherQueue.TryEnqueue(() =>
             {
-                Editor.VerticalScrollOffset = ViewModel.CurrentEditorScrollOffset;
+                Editor.RestoreViewport(ViewModel.CurrentEditorViewport);
                 Editor.Focus(FocusState.Programmatic);
             });
         }
@@ -530,7 +582,7 @@ public sealed partial class NotePage : Page
         await SaveListPositionAsync();
     }
 
-    private void SaveEditorPosition() => ViewModel.UpdateEditorScrollOffset(Editor.VerticalScrollOffset);
+    private void SaveEditorPosition() => ViewModel.UpdateEditorViewport(Editor.CaptureViewport());
 
     private async Task SaveListPositionAsync()
     {

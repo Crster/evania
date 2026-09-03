@@ -15,11 +15,26 @@ internal static class MarkdownTextUtilities
     /// every span the renderer would hide is exactly the span dropped here.
     /// </remarks>
     public static string ToPlainText(MarkdownDocument document)
+        => ToPlainText(document, 0);
+
+    public static string ToPlainText(string markdown, int sourcePosition)
+    {
+        var document = new MarkdownDocument();
+        document.SetText(markdown);
+        return ToPlainText(document, sourcePosition);
+    }
+
+    private static string ToPlainText(MarkdownDocument document, int sourcePosition)
     {
         var builder = new StringBuilder();
 
         foreach (MarkdownBlock block in MarkdownParser.Parse(document))
         {
+            if (block.End < sourcePosition)
+            {
+                continue;
+            }
+
             if (block.Kind == MarkdownBlockKind.Table)
             {
                 foreach (MarkdownTableRow row in block.Rows)

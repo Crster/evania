@@ -15,18 +15,37 @@
     </Window.SystemBackdrop>
 
     <Grid x:Name="Root">
-        <!--
-            Deliberately no two-way binding on SelectedItem: when the footer gear is clicked, the
-            control puts its own settings NavigationViewItem in that property, and a binding to a
-            typed view model property hard-casts whatever arrives, killing the process on the way.
-        -->
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TitleBar
+            Grid.Row="0"
+            Title="Evania"
+            IsBackButtonVisible="False"
+            IsPaneToggleButtonVisible="False">
+            <TitleBar.IconSource>
+                <ImageIconSource ImageSource="/Assets/Evania.ico" />
+            </TitleBar.IconSource>
+            <TitleBar.Content>
+                <AutoSuggestBox
+                    x:Name="TitleBarSearchBox"
+                    Width="360"
+                    VerticalAlignment="Center"
+                    PlaceholderText="Search notes"
+                    QueryIcon="Find"
+                    TextChanged="TitleBarSearchBox_TextChanged" />
+            </TitleBar.Content>
+        </TitleBar>
+
         <NavigationView
             x:Name="NavView"
+            Grid.Row="1"
             IsBackButtonVisible="Collapsed"
             IsPaneOpen="False"
             MenuItemsSource="{x:Bind ViewModel.MenuItems}"
             SelectionChanged="NavView_SelectionChanged">
-            
             <NavigationView.MenuItemTemplate>
                 <DataTemplate x:DataType="vm:NavigationItemViewModel">
                     <NavigationViewItem

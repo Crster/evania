@@ -33,6 +33,8 @@ public sealed partial class MainWindow : Window
 
         WindowIconService.ApplyTo(this);
 
+        ExtendsContentIntoTitleBar = true;
+
         AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
         AppWindow.Resize(new SizeInt32(1024, 768));
 
@@ -48,6 +50,17 @@ public sealed partial class MainWindow : Window
         // The first page used to arrive through the selection binding; now the pane is the single
         // place that knows what is selected, so the opening item has to be said out loud.
         NavView.SelectedItem = ViewModel.MenuItems[0];
+    }
+
+    /// <summary>
+    /// The title bar search is the window's own; when a page is a NotePage, its view model
+    /// subscribes to this so the filter stays live.
+    /// </summary>
+    public event EventHandler<string>? TitleBarSearchChanged;
+
+    private void TitleBarSearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        TitleBarSearchChanged?.Invoke(this, sender.Text);
     }
 
     /// <summary>

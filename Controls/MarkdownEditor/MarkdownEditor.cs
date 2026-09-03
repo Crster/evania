@@ -38,6 +38,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     private TextRange selection = TextRange.Caret(0);
     private bool caretOn = true;
     private bool suppressTextPropertyChange;
+    private bool disposed;
     private float contentWidth = 600f;
 
     /// <summary>
@@ -52,9 +53,19 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     /// </summary>
     private float? desiredCaretX;
 
+    /// <summary>
+    /// The block <see cref="SelectAll"/> last narrowed to, so a third Ctrl+A returns to it instead of
+    /// whatever block happens to hold the caret once the whole document is highlighted.
+    /// </summary>
+    private TextRange lastBlockSelection = TextRange.Caret(0);
+
     public MarkdownEditor()
     {
         engine = new MarkdownLayoutEngine(theme);
+
+        // Blocks are sized during layout, which is synchronous, so the engine asks the control for
+        // whatever it already knows about an image rather than waiting on a load.
+        engine.ImageNaturalSize = GetImageNaturalSize;
 
         IsTabStop = true;
         UseSystemFocusVisuals = false;
@@ -82,6 +93,11 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         {
             canvas.Invalidate();
             UpdateTableToolbarPlacement();
+
+            // The bubble is placed from a pointer sample taken against the previous viewport, so
+            // scrolling leaves it pointing at empty space; the next move re-shows it over whatever
+            // the cursor is really on.
+            HideImageTooltip();
         };
 
         Children.Add(scroller);
@@ -98,6 +114,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         InitializeTextInput();
         InitializeInput();
         InitializeTableToolbar();
+        InitializeImageTooltip();
 
         MarkdownEditorLog.Write("control constructed");
     }
@@ -193,6 +210,10 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     private void OnCanvasCreateResources(CanvasVirtualControl sender, Microsoft.Graphics.Canvas.UI.CanvasCreateResourcesEventArgs args)
     {
         MarkdownEditorLog.Write($"Win2D resources created ({args.Reason}), docLength={document.Length}");
+
+        // The bitmaps were built on the device that just went away, so they have to be dropped and
+        // reloaded against the new one.
+        ClearImageCache();
         engine.Invalidate();
         UpdateEditorLayout();
         canvas.Invalidate();
@@ -255,6 +276,12 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         float available = Math.Max(80f, contentWidth - 8f);
         bool rebuilt = engine.Update(canvas, document, available, editModeTableStart);
 
+        // A rebuild produces brand-new BlockLayout objects with no bitmap attached, so the cache is
+        // pushed in first, then any target it still lacks is kicked off. Both are cheap no-ops until
+        // an image is actually present.
+        ApplyCachedImages();
+        RequestMissingImages();
+
         // Always leave a viewport's worth of slack so clicking past the last line still lands in the
         // document instead of missing the surface entirely.
         double desiredHeight = Math.Max(engine.TotalHeight + 40, scroller.ViewportHeight);
@@ -288,6 +315,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         UpdateEditorLayout();
         canvas.Invalidate();
         ApplyTableToolbarTheme();
+        ApplyImageTooltipTheme();
     }
 
     private Color GetThemeColor(string resourceKey, Color fallback)
@@ -350,6 +378,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
             BlockRenderers.DrawDecoration(session, theme, block, Math.Max(80f, contentWidth - 8f));
             DrawSelection(session, block);
+            BlockRenderers.DrawInlineBackgrounds(session, theme, block);
             DrawBlockText(session, block);
         }
 
@@ -376,6 +405,33 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     {
         if (selection.IsEmpty)
         {
+            return;
+        }
+
+        // An image has no glyphs to highlight, so the selection is drawn as a tint over its whole box.
+        // Anything that clips the attachment counts: its markdown is hidden, so a partial drag across
+        // it would otherwise show nothing at all.
+        if (block.Block.Kind == MarkdownBlockKind.Image
+            && selection.Min < block.Block.End
+            && selection.Max > block.Block.Start)
+        {
+            global::Windows.Foundation.Rect box = BlockRenderers.GetImageBounds(block);
+            session.FillRoundedRectangle(
+                (float)box.X,
+                (float)box.Y,
+                (float)box.Width,
+                (float)box.Height,
+                6f,
+                6f,
+                theme.SelectionFill);
+            session.DrawRoundedRectangle(
+                (float)box.X + 0.5f,
+                (float)box.Y + 0.5f,
+                (float)box.Width - 1f,
+                (float)box.Height - 1f,
+                6f,
+                6f,
+                theme.LinkForeground);
             return;
         }
 
@@ -495,7 +551,31 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
         if (region is null)
         {
-            rect = new global::Windows.Foundation.Rect(block.ContentX, block.Y, 1.5, Math.Max(4, block.Height));
+            if (block.Block.Kind == MarkdownBlockKind.Image)
+            {
+                // The picture has no text to sit beside, so the caret stands just outside the edge of
+                // its box on the side the offset belongs to, kept to one line's height and centred
+                // vertically. Parking it at the block's left edge instead made it look like the caret
+                // had not moved to the end of the image at all.
+                global::Windows.Foundation.Rect box = BlockRenderers.GetImageBounds(block);
+                float imageCaretHeight = Math.Min(block.Height, theme.BodyFontSize * 1.6f);
+                float imageCaretX = selection.End >= block.Block.End
+                    ? (float)box.Right + 3f
+                    : Math.Max(0f, (float)box.X - 3f);
+
+                rect = new global::Windows.Foundation.Rect(
+                    imageCaretX,
+                    box.Y + (((float)box.Height - imageCaretHeight) / 2f),
+                    1.5,
+                    imageCaretHeight);
+                return true;
+            }
+
+            // Only blocks without a text region reach here (thematic breaks), and their Height
+            // is the whole box rather than a line. Cap the caret to roughly one text line so it does
+            // not tower over the block.
+            float caretHeight = Math.Clamp(block.Height, 4f, theme.BodyFontSize * 1.6f);
+            rect = new global::Windows.Foundation.Rect(block.ContentX, block.Y, 1.5, caretHeight);
             return true;
         }
 
@@ -638,7 +718,9 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     public void Dispose()
     {
         MarkdownEditorLog.Write("disposing");
+        disposed = true;
         caretTimer.Stop();
+        ClearImageCache();
         engine.Dispose();
         DisposeTextInput();
         // Win2D controls hold a swap chain; it must be detached explicitly or the GPU resources stay

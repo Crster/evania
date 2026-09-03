@@ -39,6 +39,9 @@ public sealed class EditorTheme
 
     public Color CodeBackground { get; set; } = Color.FromArgb(0x20, 0x80, 0x80, 0x80);
 
+    /// <summary>Band drawn behind <see cref="InlineStyle.Highlight"/> text.</summary>
+    public Color HighlightBackground { get; set; } = Color.FromArgb(0x66, 0xFF, 0xEB, 0x3B);
+
     public Color QuoteBar { get; set; } = Color.FromArgb(0x80, 0x80, 0x80, 0x80);
 
     public Color Divider { get; set; } = Color.FromArgb(0x40, 0x80, 0x80, 0x80);
@@ -102,7 +105,8 @@ internal sealed class TextRegion
         Vector2 origin,
         IReadOnlyList<LayoutSegment> segments,
         int documentStart,
-        int documentEnd)
+        int documentEnd,
+        IReadOnlyList<(int Start, int Length, MarkdownInline Inline)>? runs = null)
     {
         Layout = layout;
         RenderedText = renderedText;
@@ -110,9 +114,17 @@ internal sealed class TextRegion
         Segments = segments;
         DocumentStart = documentStart;
         DocumentEnd = documentEnd;
+        Runs = runs ?? Array.Empty<(int, int, MarkdownInline)>();
     }
 
     public CanvasTextLayout Layout { get; }
+
+    /// <summary>
+    /// The styled runs indexed into <see cref="RenderedText"/>. Only the text runs survive here - the
+    /// markdown punctuation they were built from is hidden - which is what lets the painters put a
+    /// background behind just the code or highlighted words.
+    /// </summary>
+    public IReadOnlyList<(int Start, int Length, MarkdownInline Inline)> Runs { get; }
 
     /// <summary>The exact string handed to <see cref="Layout"/>; needed to clamp caret indices.</summary>
     public string RenderedText { get; }
@@ -303,7 +315,17 @@ internal sealed class BlockLayout
 
     public CanvasTextLayout? MarkerLayout { get; set; }
 
+    /// <summary>Width of the box reserved for an image block; 0 until an image block is laid out.</summary>
+    public float ImageWidth { get; set; }
+
     public float ImageHeight { get; set; }
+
+    /// <summary>
+    /// Decoded bitmap for an image block, filled in by the control after <see cref="BlockRenderers.BuildImage"/>
+    /// reserves the box. Null until the bytes are resolved, or permanently when they never were - in which
+    /// case the placeholder is drawn instead.
+    /// </summary>
+    public CanvasBitmap? Image { get; set; }
 
     /// <summary>True when the block renders its raw markdown for editing (the active table).</summary>
     public bool IsRawEdit { get; init; }
@@ -349,6 +371,13 @@ internal sealed class MarkdownLayoutEngine : IDisposable
 
     public IReadOnlyList<BlockLayout> Blocks => blocks;
 
+    /// <summary>
+    /// Lets the control hand a natural pixel size for an image target so <see cref="BlockRenderers.BuildImage"/>
+    /// can size the block to the picture instead of always reserving the maximum box. Returns null when
+    /// the bitmap is not loaded yet.
+    /// </summary>
+    public Func<string, global::Windows.Foundation.Size?>? ImageNaturalSize { get; set; }
+
     public float TotalHeight { get; private set; }
 
     public void Invalidate()
@@ -393,7 +422,7 @@ internal sealed class MarkdownLayoutEngine : IDisposable
             BlockLayout layout = block.Kind switch
             {
                 MarkdownBlockKind.Table => BlockRenderers.BuildTable(resourceCreator, theme, block, availableWidth, block.Start == editModeTableStart),
-                MarkdownBlockKind.Image => BlockRenderers.BuildImage(resourceCreator, theme, block, availableWidth),
+                MarkdownBlockKind.Image => BlockRenderers.BuildImage(block, availableWidth, ImageNaturalSize),
                 MarkdownBlockKind.CodeBlock => BlockRenderers.BuildCodeBlock(resourceCreator, theme, block, availableWidth),
                 MarkdownBlockKind.ThematicBreak => BlockRenderers.BuildThematicBreak(theme, block),
                 _ => BuildTextBlock(resourceCreator, block, availableWidth),
@@ -443,7 +472,7 @@ internal sealed class MarkdownLayoutEngine : IDisposable
 
         ApplyRunFormatting(textLayout, runs, block);
 
-        layout.Text = new TextRegion(textLayout, rendered, new Vector2(indent, 0), segments, block.Start, block.End);
+        layout.Text = new TextRegion(textLayout, rendered, new Vector2(indent, 0), segments, block.Start, block.End, runs);
         layout.Height = MeasureHeight(textLayout, format);
 
         if (BlockRenderers.TryGetMarker(block, out string? marker))
@@ -603,15 +632,23 @@ internal sealed class MarkdownLayoutEngine : IDisposable
             return null;
         }
 
-        foreach (BlockLayout block in blocks)
+        for (int i = 0; i < blocks.Count; i++)
         {
-            if (y >= block.Y && y <= block.Y + block.Height + theme.ParagraphSpacing)
+            BlockLayout block = blocks[i];
+
+            // The band runs down to the next block's top rather than to its own height plus
+            // ParagraphSpacing. Spacing is per kind (a heading or table sits further from its
+            // neighbour than a paragraph does), so a fixed margin left the leftover pixels in no
+            // block's band at all and the pointer fell through to the last block in the document.
+            float bottom = i + 1 < blocks.Count ? blocks[i + 1].Y : block.Y + block.Height;
+
+            if (y < bottom)
             {
                 return block;
             }
         }
 
-        return y < 0 ? blocks[0] : blocks[^1];
+        return blocks[^1];
     }
 
     public BlockLayout? FindBlockFor(int documentPosition)

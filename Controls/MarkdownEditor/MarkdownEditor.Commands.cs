@@ -26,12 +26,11 @@ public sealed partial class MarkdownEditor
 
     public void ToggleStrikethrough() => ToggleWrap("~~");
 
-    public void ToggleInlineCode() => ToggleWrap("`");
+    /// <summary>Inline code, wrapped in double backticks and drawn in a monospaced face.</summary>
+    public void ToggleInlineCode() => ToggleWrap("``");
 
-    /// <summary>
-    /// Highlight uses the code delimiter and renders as inline code.
-    /// </summary>
-    public void ToggleHighlight() => ToggleWrap("`");
+    /// <summary>Highlight, wrapped in equals signs and drawn with a marker band behind the text.</summary>
+    public void ToggleHighlight() => ToggleWrap("==");
 
     /// <summary>
     /// Wraps the selection in <paramref name="delimiter"/>, or unwraps it when it is already wrapped.
@@ -394,6 +393,14 @@ public sealed partial class MarkdownEditor
             return;
         }
 
+        // Enter with a picture still selected keeps the attachment: the new line goes under it, which
+        // is what "add content below the image" means. Collapsing to the end also matches how a
+        // selection behaves in every other editor.
+        if (!selection.IsEmpty && TryGetSelectedImage(out MarkdownBlock? image))
+        {
+            SetSelection(TextRange.Caret(image!.End));
+        }
+
         int line = document.GetLineIndex(selection.Min);
         string text = document.GetLineText(line);
         string continuation = GetListContinuation(text, out bool emptyItem);
@@ -645,7 +652,75 @@ public sealed partial class MarkdownEditor
 
     // --- selection / history ------------------------------------------------------------------
 
-    public void SelectAll() => SetSelection(new TextRange(0, document.Length));
+    /// <summary>
+    /// Ctrl+A: selects the block the caret sits in, and only on the next press the whole document. A
+    /// third press narrows back to the block, so the shortcut cycles block &lt;-&gt; document.
+    /// </summary>
+    /// <remarks>
+    /// In a table the unit is the cell under the caret rather than the whole grid, because the cell is
+    /// what the user is actually editing; raw table editing has no cells, so its fenced source is the
+    /// unit. Code blocks include their fences so a copy or delete takes the block with it instead of
+    /// leaving an orphaned fence behind.
+    /// </remarks>
+    public void SelectAll()
+    {
+        if (selection.Min == 0
+            && selection.Max == document.Length
+            && document.Length > 0
+            && !lastBlockSelection.IsEmpty)
+        {
+            MarkdownEditorLog.Write($"select all: back to block {lastBlockSelection.Min}..{lastBlockSelection.Max}");
+            SetSelection(lastBlockSelection);
+            return;
+        }
+
+        TextRange block = GetBlockRange(selection.End);
+
+        bool blockAlreadySelected = !block.IsEmpty
+            && selection.Min == block.Min
+            && selection.Max == block.Max;
+
+        if (block.IsEmpty || blockAlreadySelected)
+        {
+            MarkdownEditorLog.Write($"select all: whole document 0..{document.Length}");
+            lastBlockSelection = block;
+            SetSelection(new TextRange(0, document.Length));
+            return;
+        }
+
+        MarkdownEditorLog.Write($"select all: block {block.Min}..{block.Max}");
+        lastBlockSelection = block;
+        SetSelection(new TextRange(block.Min, block.Max));
+    }
+
+    /// <summary>
+    /// The source range of the block containing <paramref name="position"/> - the grid cell when the
+    /// position is inside a rendered table, otherwise the whole block. Empty when no block claims it.
+    /// </summary>
+    private TextRange GetBlockRange(int position)
+    {
+        BlockLayout? block = engine.FindBlockFor(position);
+
+        // FindBlockFor clamps to the last block when nothing contains the position, so containment has
+        // to be verified rather than trusted.
+        if (block is null || !block.Contains(position))
+        {
+            return TextRange.Caret(0);
+        }
+
+        if (block.Block.Kind == MarkdownBlockKind.Table && !block.IsRawEdit)
+        {
+            foreach (TableCellLayout cell in block.Cells)
+            {
+                if (cell.Region.ContainsDocumentPosition(position))
+                {
+                    return new TextRange(cell.Region.DocumentStart, cell.Region.DocumentEnd);
+                }
+            }
+        }
+
+        return new TextRange(block.Block.Start, block.Block.End);
+    }
 
     public void Undo()
     {

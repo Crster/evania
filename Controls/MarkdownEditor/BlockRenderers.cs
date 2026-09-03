@@ -29,6 +29,30 @@ internal static class BlockRenderers
     private const float CellPaddingY = 6f;
     private const float RuleHeight = 13f;
 
+    /// <summary>
+    /// The largest an image is ever drawn. A note is mostly text, so attachments stay thumbnails
+    /// rather than banners: 200x200 keeps the block close to the size of a tall paragraph.
+    /// </summary>
+    public const float MaxImageSize = 200f;
+
+    /// <summary>
+    /// The smallest edge an image box ever reserves. A very wide or very tall picture scales down to a
+    /// sliver, and a sliver is neither clickable nor selectable, so the box keeps a floor.
+    /// </summary>
+    public const float MinImageSize = 24f;
+
+    /// <summary>
+    /// The rectangle an image block occupies: its own box (see <see cref="BuildImage"/>) centred in
+    /// the content width. Shared by painting, hit-testing and the caret so every consumer agrees on
+    /// where the picture actually is.
+    /// </summary>
+    public static Rect GetImageBounds(BlockLayout layout)
+    {
+        float boxWidth = layout.ImageWidth > 0 ? layout.ImageWidth : Math.Min(MaxImageSize, layout.ContentWidth);
+        float left = (layout.ContentWidth - boxWidth) / 2f;
+        return new Rect(left, layout.Y, boxWidth, layout.ImageHeight);
+    }
+
     // --- layout -------------------------------------------------------------------------------
 
     /// <summary>
@@ -130,34 +154,42 @@ internal static class BlockRenderers
     };
 
     /// <summary>
-    /// Reserves a fixed box for an image. The bitmap itself is resolved asynchronously by the control,
-    /// so the layout only needs a stable placeholder size.
+    /// Reserves the box an image is drawn in: the picture's own size, never wider than
+    /// <see cref="MaxImageSize"/> or the content width and never taller than <see cref="MaxImageSize"/>.
+    /// The bitmap itself is resolved asynchronously by the control, so <paramref name="naturalSize"/>
+    /// only answers once the bytes have arrived; until then the full capped square stands in as the
+    /// placeholder. Nothing is drawn as a caption; the file name surfaces as a hover tooltip instead
+    /// (see <c>MarkdownEditor.Images.cs</c>).
     /// </summary>
     public static BlockLayout BuildImage(
-        ICanvasResourceCreator resourceCreator,
-        EditorTheme theme,
         MarkdownBlock block,
-        float availableWidth)
+        float availableWidth,
+        Func<string, global::Windows.Foundation.Size?>? naturalSize)
     {
-        var caption = new CanvasTextFormat
+        float capWidth = Math.Min(MaxImageSize, availableWidth);
+        float boxWidth = capWidth;
+        float boxHeight = MaxImageSize;
+
+        if (block.Target is string target
+            && naturalSize?.Invoke(target) is global::Windows.Foundation.Size size
+            && size.Width > 0
+            && size.Height > 0)
         {
-            FontFamily = theme.BodyFontFamily,
-            FontSize = theme.BodyFontSize * 0.85f,
-            WordWrapping = CanvasWordWrapping.Wrap,
-        };
+            // Contain without upscaling, so a small attachment does not reserve a column of empty
+            // space around itself and a wide banner is scaled down rather than cropped. The floor
+            // keeps a 4000x40 panorama from collapsing into a sliver nothing can be clicked on.
+            float scale = Math.Min(1f, Math.Min(capWidth / (float)size.Width, MaxImageSize / (float)size.Height));
+            boxWidth = Math.Max(Math.Min(MinImageSize, capWidth), (float)size.Width * scale);
+            boxHeight = Math.Max(MinImageSize, (float)size.Height * scale);
+        }
 
-        string alt = string.IsNullOrWhiteSpace(block.AltText) ? "Image" : block.AltText!;
-        var captionLayout = new CanvasTextLayout(resourceCreator, alt, caption, Math.Max(40f, availableWidth), 0f);
-        captionLayout.SetColor(0, alt.Length, theme.SecondaryForeground);
-
-        float imageHeight = Math.Min(320f, availableWidth * 0.5f);
         return new BlockLayout
         {
             Block = block,
             ContentWidth = availableWidth,
-            ImageHeight = imageHeight,
-            Text = new TextRegion(captionLayout, alt, new Vector2(0, imageHeight + 4f), new List<LayoutSegment> { new(0, block.Start, 0, true) }, block.Start, block.End),
-            Height = imageHeight + 4f + MarkdownLayoutEngine.MeasureHeight(captionLayout, caption),
+            ImageWidth = boxWidth,
+            ImageHeight = boxHeight,
+            Height = boxHeight,
         };
     }
 
@@ -223,7 +255,8 @@ internal static class BlockRenderers
                     new Vector2(layout.ColumnOffsets[c] + CellPaddingX, y + CellPaddingY),
                     segments,
                     cell.Start,
-                    cell.End);
+                    cell.End,
+                    runs);
 
                 layout.Cells.Add(new TableCellLayout
                 {
@@ -353,6 +386,81 @@ internal static class BlockRenderers
     // --- painting -----------------------------------------------------------------------------
 
     /// <summary>
+    /// Paints the marker band behind highlighted spans. This runs after the selection fill but before
+    /// the glyphs so the band sits under the text yet over the selection.
+    /// </summary>
+    /// <remarks>
+    /// Inline code is deliberately absent: it is distinguished by colour and a monospaced family, not
+    /// by a background. Only the rendered text runs reach this method - the regions built for code
+    /// blocks and raw table editing carry no runs at all. A run's characters are merged into one box
+    /// per visual line first, because the fill is translucent and overlapping per-character rectangles
+    /// would compound into a darker patch.
+    /// </remarks>
+    public static void DrawInlineBackgrounds(CanvasDrawingSession session, EditorTheme theme, BlockLayout layout)
+    {
+        DrawRegionBackgrounds(session, theme, layout.Text, layout.Y);
+        foreach (TableCellLayout cell in layout.Cells)
+        {
+            DrawRegionBackgrounds(session, theme, cell.Region, layout.Y);
+        }
+    }
+
+    private static void DrawRegionBackgrounds(CanvasDrawingSession session, EditorTheme theme, TextRegion? region, float yOffset)
+    {
+        if (region is null || region.Runs.Count == 0 || region.RenderedText.Length == 0)
+        {
+            return;
+        }
+
+        foreach ((int start, int length, MarkdownInline inline) in region.Runs)
+        {
+            if (inline.IsSyntax || length <= 0 || !inline.Style.HasFlag(InlineStyle.Highlight))
+            {
+                continue;
+            }
+
+            int clampedStart = Math.Clamp(start, 0, region.RenderedText.Length);
+            int clampedLength = Math.Min(length, region.RenderedText.Length - clampedStart);
+            if (clampedLength <= 0)
+            {
+                continue;
+            }
+
+            // Merge consecutive character boxes that share a line into one run rectangle.
+            var boxes = new List<Rect>();
+            foreach (CanvasTextLayoutRegion charRegion in region.Layout.GetCharacterRegions(clampedStart, clampedLength))
+            {
+                Rect box = charRegion.LayoutBounds;
+                if (box.Width <= 0 && box.Height <= 0)
+                {
+                    continue;
+                }
+
+                if (boxes.Count > 0 && Math.Abs(box.Y - boxes[^1].Y) < 1)
+                {
+                    Rect last = boxes[^1];
+                    double left = Math.Min(last.X, box.X);
+                    double top = Math.Min(last.Y, box.Y);
+                    double right = Math.Max(last.X + last.Width, box.X + box.Width);
+                    double bottom = Math.Max(last.Y + last.Height, box.Y + box.Height);
+                    boxes[^1] = new Rect(left, top, right - left, bottom - top);
+                }
+                else
+                {
+                    boxes.Add(box);
+                }
+            }
+
+            foreach (Rect box in boxes)
+            {
+                float x = (float)box.X + region.Origin.X;
+                float y = (float)box.Y + region.Origin.Y + yOffset;
+                session.FillRectangle(x, y, (float)box.Width, (float)box.Height, theme.HighlightBackground);
+            }
+        }
+    }
+
+    /// <summary>
     /// Draws the chrome behind a block (quote bar, code background, table grid, checkbox, rule). The
     /// text itself is drawn by the control afterwards so selection highlighting can sit between them.
     /// </summary>
@@ -378,8 +486,7 @@ internal static class BlockRenderers
             case MarkdownBlockKind.Image:
                 if (layout.ImageHeight > 0)
                 {
-                    session.FillRoundedRectangle(0, y, contentWidth, layout.ImageHeight, 6f, 6f, theme.CodeBackground);
-                    session.DrawRoundedRectangle(0.5f, y + 0.5f, contentWidth - 1f, layout.ImageHeight - 1f, 6f, 6f, theme.Divider);
+                    DrawImage(session, theme, layout);
                 }
 
                 break;
@@ -406,6 +513,40 @@ internal static class BlockRenderers
             float markerX = Math.Max(0, layout.ContentX - theme.BlockIndent + 4f);
             session.DrawTextLayout(layout.MarkerLayout, markerX, y, theme.SecondaryForeground);
         }
+    }
+
+    /// <summary>
+    /// Draws an image block: the decoded bitmap scaled to fit inside the reserved box and centred, or
+    /// the grey placeholder when the bytes have not arrived (or never will).
+    /// </summary>
+    private static void DrawImage(CanvasDrawingSession session, EditorTheme theme, BlockLayout layout)
+    {
+        Rect box = GetImageBounds(layout);
+
+        if (layout.Image is null)
+        {
+            session.FillRoundedRectangle((float)box.X, (float)box.Y, (float)box.Width, (float)box.Height, 6f, 6f, theme.CodeBackground);
+            session.DrawRoundedRectangle((float)box.X + 0.5f, (float)box.Y + 0.5f, (float)box.Width - 1f, (float)box.Height - 1f, 6f, 6f, theme.Divider);
+            return;
+        }
+
+        // CanvasBitmap.Size is a Windows.Foundation.Size whose members are doubles.
+        float pixelWidth = (float)layout.Image.Size.Width;
+        float pixelHeight = (float)layout.Image.Size.Height;
+        if (pixelWidth <= 0 || pixelHeight <= 0)
+        {
+            return;
+        }
+
+        // Contain, never upscale: a small attachment enlarged to fill the box would only blur.
+        float scale = Math.Min(1f, Math.Min((float)box.Width / pixelWidth, (float)box.Height / pixelHeight));
+        float width = pixelWidth * scale;
+        float height = pixelHeight * scale;
+        float left = (float)box.X + ((float)box.Width - width) / 2f;
+        float top = (float)box.Y + ((float)box.Height - height) / 2f;
+
+        session.DrawImage(layout.Image, new Rect(left, top, width, height));
+        session.DrawRoundedRectangle(left + 0.5f, top + 0.5f, width - 1f, height - 1f, 4f, 4f, theme.Divider);
     }
 
     private static void DrawTableGrid(CanvasDrawingSession session, EditorTheme theme, BlockLayout layout)

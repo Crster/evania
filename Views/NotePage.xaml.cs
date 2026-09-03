@@ -31,6 +31,36 @@ public sealed partial class NotePage : Page
         InitializeComponent();
         DataContext = ViewModel;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        Editor.ImageResolver = ResolveImageAsync;
+    }
+
+    /// <summary>
+    /// Loads an editor image by its markdown target. Only attachment URIs are backed by the database;
+    /// every other target (a plain URL or a path the editor has no bytes for) returns null and keeps
+    /// its placeholder.
+    /// </summary>
+    private async Task<byte[]?> ResolveImageAsync(string target)
+    {
+        if (!target.StartsWith(AttachmentLinkPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        string id = Uri.UnescapeDataString(target[AttachmentLinkPrefix.Length..]);
+        if (id.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await NoteService.ReadAttachmentAsync(id);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Editor image load failed for '{id}': {ex.Message}");
+            return null;
+        }
     }
 
     private async void NotePage_Loaded(object sender, RoutedEventArgs e)
@@ -98,6 +128,8 @@ public sealed partial class NotePage : Page
     private void Strikethrough_Click(object sender, RoutedEventArgs e) => Editor.ToggleStrikethrough();
 
     private void Highlight_Click(object sender, RoutedEventArgs e) => Editor.ToggleHighlight();
+
+    private void Code_Click(object sender, RoutedEventArgs e) => Editor.ToggleInlineCode();
 
     private void Heading1_Click(object sender, RoutedEventArgs e) => Editor.ApplyHeading(1);
 

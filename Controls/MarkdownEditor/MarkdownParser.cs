@@ -12,6 +12,7 @@ public enum InlineStyle
     Strikethrough = 1 << 2,
     Code = 1 << 3,
     Link = 1 << 4,
+    Highlight = 1 << 5,
 }
 
 public enum MarkdownBlockKind
@@ -601,10 +602,19 @@ public static class MarkdownParser
 
             if (c == '`')
             {
-                // A doubled backtick is the highlight delimiter, handled further below.
-                bool doubled = (i + 1 < text.Length && text[i + 1] == '`')
-                    || (i > plainStart && text[i - 1] == '`');
-                int close = doubled ? -1 : text.IndexOf('`', i + 1);
+                // ``...`` is code; the single-backtick shorthand still works for text typed by hand,
+                // so the two-character delimiter is tried first to keep "``x``" from opening an empty
+                // single-backtick run.
+                if (TryReadDelimited(text, i, "``", out int codeStart, out int codeEnd, out int codeStop))
+                {
+                    FlushPlain(i);
+                    AddDelimited(result, offset, text, i, codeStart, codeEnd, codeStop, InlineStyle.Code);
+                    i = codeStop;
+                    plainStart = i;
+                    continue;
+                }
+
+                int close = text.IndexOf('`', i + 1);
                 if (close > i)
                 {
                     FlushPlain(i);
@@ -655,12 +665,11 @@ public static class MarkdownParser
                 plainStart = i;
                 continue;
             }
-            else if (TryReadDelimited(text, i, "``", out int inner5Start, out int inner5End, out int end5))
+            else if (TryReadDelimited(text, i, "==", out int hlStart, out int hlEnd, out int hlStop))
             {
-                // Highlight (``...``) renders as inline code until it gets its own style.
                 FlushPlain(i);
-                AddDelimited(result, offset, text, i, inner5Start, inner5End, end5, InlineStyle.Code);
-                i = end5;
+                AddDelimited(result, offset, text, i, hlStart, hlEnd, hlStop, InlineStyle.Highlight);
+                i = hlStop;
                 plainStart = i;
                 continue;
             }

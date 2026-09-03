@@ -104,6 +104,7 @@ public sealed partial class MarkdownEditor
     private void OnCanvasPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         bool focused = Focus(FocusState.Programmatic);
+        HideImageTooltip();
 
         global::Windows.Foundation.Point point = e.GetCurrentPoint(canvas).Position;
         int position = HitTestDocument(point);
@@ -124,6 +125,19 @@ public sealed partial class MarkdownEditor
         consecutiveClicks = IsDoubleClick(point) ? consecutiveClicks + 1 : 1;
         lastClickUtc = DateTime.UtcNow;
         lastClickPoint = point;
+
+        // A picture stands for its whole attachment rather than a run of characters, so clicking it
+        // highlights the image. That is how the user reaches Delete on it, and the double and triple
+        // click gestures have nothing meaningful to expand inside the hidden markdown anyway.
+        if (FindImageBlockAt(point) is BlockLayout image && !IsShiftDown())
+        {
+            SetSelection(new TextRange(image.Block.Start, image.Block.End));
+            isDragging = true;
+            dragAnchor = selection.Start;
+            canvas.CapturePointer(e.Pointer);
+            e.Handled = true;
+            return;
+        }
 
         if (consecutiveClicks == 2)
         {
@@ -157,8 +171,17 @@ public sealed partial class MarkdownEditor
         }
 
         int position = HitTestDocument(e.GetCurrentPoint(canvas).Position);
-        SetSelection(new TextRange(dragAnchor, position));
         e.Handled = true;
+
+        // Pointer samples far outrun glyph boundaries, so most moves resolve to the offset the
+        // selection already has. Setting it anyway repaints the whole surface and re-runs the
+        // scroll-into-view maths on every one of them.
+        if (position == selection.End)
+        {
+            return;
+        }
+
+        SetSelection(new TextRange(dragAnchor, position));
     }
 
     private void OnCanvasPointerReleased(object sender, PointerRoutedEventArgs e)
@@ -172,15 +195,30 @@ public sealed partial class MarkdownEditor
     }
 
     private void OnCanvasPointerExited(object sender, PointerRoutedEventArgs e)
-        => ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+    {
+        HideImageTooltip();
+        ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+    }
 
     private void UpdateCursor(global::Windows.Foundation.Point point)
     {
+        UpdateImageTooltip(point);
+
         // The checkbox is a button, not text, so it gets the arrow instead of the I-beam.
         BlockLayout? hoverBlock = engine.HitTestBlock((float)point.Y);
         if (hoverBlock is not null
             && hoverBlock.Block.Kind == MarkdownBlockKind.TaskItem
             && BlockRenderers.GetCheckboxBounds(theme, hoverBlock).Contains(point))
+        {
+            ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+            return;
+        }
+
+        // A picture is an object, not text: the pointer over it stays the normal arrow too, so the
+        // I-beam does not pretend the attachment is selectable as characters.
+        if (hoverBlock is not null
+            && hoverBlock.Block.Kind == MarkdownBlockKind.Image
+            && BlockRenderers.GetImageBounds(hoverBlock).Contains(point))
         {
             ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
             return;
@@ -227,6 +265,15 @@ public sealed partial class MarkdownEditor
                     return cell.Region.HitTest(new Vector2((float)point.X, localY));
                 }
             }
+        }
+
+        if (block.Block.Kind == MarkdownBlockKind.Image)
+        {
+            // The picture stands for its whole attachment, so a click resolves to the nearer edge.
+            // Returning the start for both sides is what left no way to put the caret after an image,
+            // which is exactly where Enter has to be pressed to write underneath it.
+            global::Windows.Foundation.Rect box = BlockRenderers.GetImageBounds(block);
+            return point.X > box.X + (box.Width / 2f) ? block.Block.End : block.Block.Start;
         }
 
         if (block.Text is null)
@@ -309,12 +356,14 @@ public sealed partial class MarkdownEditor
         switch (e.Key)
         {
             case VirtualKey.Left:
-                MoveCaret(GetAdjacentPosition(selection.End, -1), shift);
+                // A non-empty selection collapses to its own edge first, which is what every text
+                // control does and what lets the user arrow out of a clicked image.
+                MoveCaret(!selection.IsEmpty && !shift ? selection.Min : GetAdjacentPosition(selection.End, -1), shift);
                 e.Handled = true;
                 break;
 
             case VirtualKey.Right:
-                MoveCaret(GetAdjacentPosition(selection.End, 1), shift);
+                MoveCaret(!selection.IsEmpty && !shift ? selection.Max : GetAdjacentPosition(selection.End, 1), shift);
                 e.Handled = true;
                 break;
 
@@ -380,6 +429,7 @@ public sealed partial class MarkdownEditor
         VirtualKey.B => Run(ToggleBold),
         VirtualKey.I => Run(ToggleItalic),
         VirtualKey.E => Run(ToggleInlineCode),
+        VirtualKey.H => Run(ToggleHighlight),
         VirtualKey.K => Run(() => InsertLink()),
         VirtualKey.A => Run(SelectAll),
         VirtualKey.C => Run(() => _ = CopyAsync()),
@@ -415,6 +465,22 @@ public sealed partial class MarkdownEditor
     /// </summary>
     private int GetAdjacentPosition(int position, int direction)
     {
+        // An image is treated as one oversized character: its markdown stays hidden, so there is
+        // nothing in between to stop at. A step that would land inside the link jumps to its far edge
+        // instead, which is what lets the arrow keys walk past a clicked or left-aligned caret.
+        if (engine.FindBlockFor(position)?.Block is { Kind: MarkdownBlockKind.Image } image)
+        {
+            if (direction > 0 && position >= image.Start && position < image.End)
+            {
+                return image.End;
+            }
+
+            if (direction < 0 && position > image.Start && position <= image.End)
+            {
+                return image.Start;
+            }
+        }
+
         int next = position + direction;
         if (next < 0)
         {
@@ -449,9 +515,20 @@ public sealed partial class MarkdownEditor
         }
 
         float x = desiredCaretX ?? (float)caretRect.X;
+
+        // A caret parked at an image edge is centred inside the tall image box (see TryGetCaretRect), so
+        // a probe relative to the caret rect would land back inside the same image and Up/Down could
+        // never leave it. Probe from the image box's own top or bottom edge instead.
         double probeY = direction < 0
             ? caretRect.Top - (caretRect.Height * 0.6)
             : caretRect.Bottom + (caretRect.Height * 0.6);
+
+        BlockLayout? caretBlock = engine.FindBlockFor(selection.End);
+        if (caretBlock is not null && caretBlock.Block.Kind == MarkdownBlockKind.Image)
+        {
+            global::Windows.Foundation.Rect box = BlockRenderers.GetImageBounds(caretBlock);
+            probeY = direction < 0 ? box.Top - 2f : box.Bottom + 2f;
+        }
 
         int position = HitTestDocument(new global::Windows.Foundation.Point(x, probeY));
         SetSelection(extend ? new TextRange(selection.Start, position) : TextRange.Caret(position), resetDesiredX: false);
@@ -474,6 +551,12 @@ public sealed partial class MarkdownEditor
 
     private void HandleBackspace()
     {
+        if (TryGetSelectedImage(out MarkdownBlock? selected))
+        {
+            DeleteImageBlock(selected!);
+            return;
+        }
+
         if (!selection.IsEmpty)
         {
             DeleteSelectionPreservingTable();
@@ -482,6 +565,15 @@ public sealed partial class MarkdownEditor
 
         if (selection.End == 0)
         {
+            return;
+        }
+
+        // The caret sits right behind an image on its own line. Deleting into it one character at a
+        // time would shred the invisible attachment link, so the whole block goes instead. A caret
+        // past the line break is on the next line, where backspace should just join the lines.
+        if (FindImageEndingAt(selection.End) is MarkdownBlock behind)
+        {
+            DeleteImageBlock(behind);
             return;
         }
 
@@ -507,6 +599,12 @@ public sealed partial class MarkdownEditor
 
     private void HandleDelete()
     {
+        if (TryGetSelectedImage(out MarkdownBlock? selected))
+        {
+            DeleteImageBlock(selected!);
+            return;
+        }
+
         if (!selection.IsEmpty)
         {
             DeleteSelectionPreservingTable();
@@ -515,6 +613,14 @@ public sealed partial class MarkdownEditor
 
         if (selection.End >= document.Length)
         {
+            return;
+        }
+
+        // Mirrors the backspace case: a caret parked in front of a picture deletes it whole rather
+        // than nibbling away at the hidden link.
+        if (FindImageStartingAt(selection.End) is MarkdownBlock ahead)
+        {
+            DeleteImageBlock(ahead);
             return;
         }
 
@@ -527,6 +633,92 @@ public sealed partial class MarkdownEditor
         }
 
         SetSelection(document.Replace(selection.End, end - selection.End, string.Empty, MarkdownEditKind.Deleting, selection));
+    }
+
+    /// <summary>
+    /// The image block whose markdown ends at <paramref name="position"/>: the one sitting directly in
+    /// front of a caret there, and therefore the one backspace removes.
+    /// </summary>
+    private MarkdownBlock? FindImageEndingAt(int position)
+    {
+        MarkdownBlock? block = engine.FindBlockFor(position)?.Block;
+        return block is not null && block.Kind == MarkdownBlockKind.Image && block.End == position ? block : null;
+    }
+
+    /// <summary>
+    /// The image block that starts at <paramref name="position"/>: the one directly behind a caret
+    /// there, and therefore the one the delete key removes.
+    /// </summary>
+    private MarkdownBlock? FindImageStartingAt(int position)
+    {
+        MarkdownBlock? block = engine.FindBlockFor(position)?.Block;
+        return block is not null && block.Kind == MarkdownBlockKind.Image && block.Start == position ? block : null;
+    }
+
+    /// <summary>
+    /// The image block drawn under <paramref name="point"/>, or null. Unlike
+    /// <see cref="HitTestDocument"/> this reports a miss when the pointer is merely in the band around
+    /// a picture, so a click beside one does not select it.
+    /// </summary>
+    private BlockLayout? FindImageBlockAt(global::Windows.Foundation.Point point)
+    {
+        BlockLayout? block = engine.HitTestBlock((float)point.Y);
+        if (block is null || block.Block.Kind != MarkdownBlockKind.Image)
+        {
+            return null;
+        }
+
+        return BlockRenderers.GetImageBounds(block).Contains(point) ? block : null;
+    }
+
+    /// <summary>
+    /// True when the selection is exactly one image's markdown, which is what clicking a picture
+    /// leaves behind. Backspace and Delete turn that into "remove the attachment".
+    /// </summary>
+    private bool TryGetSelectedImage(out MarkdownBlock? image)
+    {
+        image = null;
+        if (selection.IsEmpty)
+        {
+            return false;
+        }
+
+        foreach (BlockLayout block in engine.Blocks)
+        {
+            if (block.Block.Kind == MarkdownBlockKind.Image
+                && block.Block.Start == selection.Min
+                && block.Block.End == selection.Max)
+            {
+                image = block.Block;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Removes an image together with one of its line breaks, so no blank line is left where the
+    /// attachment was. The image cache keeps the bitmap, so undoing brings it back without reloading.
+    /// </summary>
+    private void DeleteImageBlock(MarkdownBlock block)
+    {
+        int start = block.Start;
+        int end = block.End;
+
+        // Prefer swallowing the break that follows the image; at the very end of the document the one
+        // before it goes instead so the preceding line is not left dangling.
+        if (end < document.Length && document[end] == '\n')
+        {
+            end++;
+        }
+        else if (start > 0 && document[start - 1] == '\n')
+        {
+            start--;
+        }
+
+        MarkdownEditorLog.Write($"deleting image block {start}..{end} {MarkdownEditorLog.Snippet(block.AltText)}");
+        SetSelection(document.Replace(start, end - start, string.Empty, MarkdownEditKind.Deleting, selection));
     }
 
     private static bool IsCtrlDown()

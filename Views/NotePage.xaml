@@ -108,6 +108,7 @@
                     <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Italic" Click="Italic_Click"><FontIcon Glyph="&#xE8DB;" FontSize="14" /></Button>
                     <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Strikethrough" Click="Strikethrough_Click"><FontIcon Glyph="&#xEDE0;" FontSize="14" /></Button>
                     <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Highlight" Click="Highlight_Click"><FontIcon Glyph="&#xE7E6;" FontSize="14" /></Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Inline code" Click="Code_Click"><FontIcon Glyph="&#xE84B;" FontSize="14" /></Button>
                     <Rectangle Width="1" Height="16" Margin="6,0" Opacity="0.25" Fill="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
                     <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Heading 1" Click="Heading1_Click"><TextBlock Text="H1" FontSize="12" FontWeight="SemiBold" /></Button>
                     <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Heading 2" Click="Heading2_Click"><TextBlock Text="H2" FontSize="12" FontWeight="SemiBold" /></Button>

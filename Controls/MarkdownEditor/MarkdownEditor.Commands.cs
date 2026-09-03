@@ -1,8 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace Evania.Controls.MarkdownEditor;
@@ -160,6 +167,10 @@ public sealed partial class MarkdownEditor
 
     public void InsertHorizontalRule() => InsertBlock("---");
 
+    public void InsertDateTime() => InsertText(DateTime.Now.ToString("g"));
+
+    public void InsertUuid7() => InsertText(Guid.CreateVersion7().ToString());
+
     /// <summary>
     /// Wraps the selection in a fenced code block, or removes the surrounding fences when the
     /// selection or caret is already inside one.
@@ -226,6 +237,8 @@ public sealed partial class MarkdownEditor
     /// </summary>
     private void InsertBlock(string markdown)
     {
+        EscapeImageBlock();
+
         int min = selection.Min;
         bool needsLeading = min > 0 && document[min - 1] != '\n';
         bool needsTrailing = selection.Max >= document.Length || document[selection.Max] != '\n';
@@ -233,6 +246,78 @@ public sealed partial class MarkdownEditor
         string payload = (needsLeading ? "\n" : string.Empty) + markdown + (needsTrailing ? "\n" : string.Empty);
         document.Replace(min, selection.Length, payload, MarkdownEditKind.Structural, selection);
         SetSelection(TextRange.Caret(min + payload.Length));
+    }
+
+    /// <summary>
+    /// Moves the caret past the image block or inline link when it is inside one, so inserting a new
+    /// block or typing does not shred the hidden link/attachment markdown syntax.
+    /// </summary>
+    private void EscapeImageBlock()
+    {
+        BlockLayout? layout = engine.FindBlockFor(selection.Min);
+        if (layout is null)
+        {
+            return;
+        }
+
+        if (layout.Block.Kind == MarkdownBlockKind.Image)
+        {
+            SetSelection(TextRange.Caret(layout.Block.End));
+            return;
+        }
+
+        // If the caret is inside any link inline, move past the entire link group
+        // so the link syntax is not split.
+        IReadOnlyList<MarkdownInline> inlines = layout.Block.Inlines;
+        for (int i = 0; i < inlines.Count; i++)
+        {
+            MarkdownInline inline = inlines[i];
+            if ((inline.Style & InlineStyle.Link) != 0)
+            {
+                bool isFirstInGroup = i == 0 || (inlines[i - 1].Style & InlineStyle.Link) == 0;
+                if (isFirstInGroup && selection.Min == inline.Start)
+                {
+                    continue;
+                }
+
+                if (selection.Min >= inline.Start && selection.Min <= inline.End)
+                {
+                    SetSelection(TextRange.Caret(FindLinkEnd(inlines, inline)));
+                    return;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns the exclusive end of the last inline in a consecutive run of link-styled inlines
+    /// that includes <paramref name="linkInline"/>.
+    /// </summary>
+    private static int FindLinkEnd(IReadOnlyList<MarkdownInline> inlines, MarkdownInline linkInline)
+    {
+        int end = linkInline.End;
+        bool found = false;
+        foreach (MarkdownInline inline in inlines)
+        {
+            if (inline == linkInline)
+            {
+                found = true;
+                end = inline.End;
+            }
+            else if (found)
+            {
+                if ((inline.Style & InlineStyle.Link) != 0)
+                {
+                    end = inline.End;
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+
+        return end;
     }
 
     // --- block commands -----------------------------------------------------------------------
@@ -388,6 +473,12 @@ public sealed partial class MarkdownEditor
     /// </summary>
     private void HandleEnter()
     {
+        if (selection.IsEmpty && TryGetAtomicBlockSyntax(selection.End, out TextRange syntax)
+            && selection.End > syntax.Min && selection.End <= syntax.Max)
+        {
+            SetSelection(TextRange.Caret(syntax.Min));
+        }
+
         if (TryInsertTableRowBelow())
         {
             return;
@@ -400,6 +491,8 @@ public sealed partial class MarkdownEditor
         {
             SetSelection(TextRange.Caret(image!.End));
         }
+
+        EscapeImageBlock();
 
         int line = document.GetLineIndex(selection.Min);
         string text = document.GetLineText(line);
@@ -813,10 +906,31 @@ public sealed partial class MarkdownEditor
 
         MarkdownEditorLog.Write($"pasting {text.Length} chars over {selection.Min}..{selection.Max} {MarkdownEditorLog.Snippet(text)}");
 
-        if (!selection.IsEmpty && IsAbsoluteUrl(text.Trim()))
+        string trimmed = text.Trim();
+        if (IsAbsoluteUrl(trimmed))
         {
-            MarkdownEditorLog.Write("clipboard is a URL, wrapping selection as a link");
-            InsertLink(text.Trim(), document.GetText(selection));
+            if (!selection.IsEmpty)
+            {
+                MarkdownEditorLog.Write("clipboard is a URL, wrapping selection as a link");
+                InsertLink(trimmed, document.GetText(selection));
+                return;
+            }
+
+            MarkdownEditorLog.Write("clipboard is a bare URL, converting to formatted link");
+            string title = await TryExtractTitleFromClipboardHtmlAsync(view, trimmed)
+                ?? await TryFetchWebPageTitleAsync(trimmed)
+                ?? trimmed;
+
+            string markdownLink = $"[{title}]({trimmed})";
+            TableGuardResult linkGuard = GetTableGuard(selection, markdownLink);
+            if (linkGuard.Blocked)
+            {
+                MarkdownEditorLog.Exit("paste refused by table protection");
+                return;
+            }
+
+            string insert = linkGuard.Replacement;
+            SetSelection(document.Replace(selection.Min, selection.Length, insert, MarkdownEditKind.Structural, selection));
             return;
         }
 
@@ -836,8 +950,113 @@ public sealed partial class MarkdownEditor
         SetSelection(document.Replace(selection.Min, selection.Length, text, MarkdownEditKind.Structural, selection));
     }
 
+    private static readonly HttpClient HttpTitleClient = CreateHttpTitleClient();
+
+    private static HttpClient CreateHttpTitleClient()
+    {
+        HttpClientHandler handler = new()
+        {
+            AllowAutoRedirect = true,
+            AutomaticDecompression = DecompressionMethods.All
+        };
+        HttpClient client = new(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(3)
+        };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        return client;
+    }
+
+    private static async Task<string?> TryExtractTitleFromClipboardHtmlAsync(DataPackageView view, string targetUrl)
+    {
+        try
+        {
+            if (!view.Contains(StandardDataFormats.Html))
+            {
+                return null;
+            }
+
+            string html = await view.GetHtmlFormatAsync();
+            if (string.IsNullOrEmpty(html))
+            {
+                return null;
+            }
+
+            Match aMatch = Regex.Match(html, @"<a\s+[^>]*href=[""']([^""']+)[""'][^>]*>(.*?)</a>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (aMatch.Success)
+            {
+                string href = aMatch.Groups[1].Value;
+                if (href.Equals(targetUrl, StringComparison.OrdinalIgnoreCase) || targetUrl.Contains(href, StringComparison.OrdinalIgnoreCase) || href.Contains(targetUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    string text = Regex.Replace(aMatch.Groups[2].Value, @"<[^>]+>", string.Empty);
+                    text = WebUtility.HtmlDecode(text);
+                    text = Regex.Replace(text, @"\s+", " ").Trim();
+                    if (!string.IsNullOrWhiteSpace(text) && !IsAbsoluteUrl(text))
+                    {
+                        return text.Replace("[", "\\[").Replace("]", "\\]");
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore clipboard html parsing errors
+        }
+
+        return null;
+    }
+
+    private static async Task<string?> TryFetchWebPageTitleAsync(string url)
+    {
+        try
+        {
+            using CancellationTokenSource cts = new(TimeSpan.FromSeconds(2.5));
+            using HttpResponseMessage response = await HttpTitleClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            string? mediaType = response.Content.Headers.ContentType?.MediaType;
+            if (mediaType != null && !mediaType.Contains("html", StringComparison.OrdinalIgnoreCase) && !mediaType.Contains("text", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            using System.IO.Stream stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            byte[] buffer = new byte[65536];
+            int read = await stream.ReadAsync(buffer, cts.Token);
+            if (read == 0)
+            {
+                return null;
+            }
+
+            string html = Encoding.UTF8.GetString(buffer, 0, read);
+            Match match = Regex.Match(html, @"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (match.Success)
+            {
+                string rawTitle = match.Groups[1].Value;
+                string cleanTitle = WebUtility.HtmlDecode(rawTitle);
+                cleanTitle = Regex.Replace(cleanTitle, @"\s+", " ").Trim();
+                cleanTitle = cleanTitle.Replace("[", "\\[").Replace("]", "\\]");
+                if (!string.IsNullOrWhiteSpace(cleanTitle))
+                {
+                    return cleanTitle;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            MarkdownEditorLog.Write($"failed to fetch html title for {MarkdownEditorLog.Snippet(url)}: {ex.Message}");
+        }
+
+        return null;
+    }
+
     private static bool IsAbsoluteUrl(string text)
-        => Uri.TryCreate(text, UriKind.Absolute, out Uri? uri)
+        => !text.Contains('\n') && !text.Contains('\r') && !text.Contains(' ')
+            && Uri.TryCreate(text, UriKind.Absolute, out Uri? uri)
             && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
     /// <summary>
@@ -879,6 +1098,222 @@ public sealed partial class MarkdownEditor
         else
         {
             InsertBlock($"[{fileName}]({target})");
+        }
+    }
+
+    /// <summary>
+    /// Checks if <paramref name="position"/> falls inside a markdown link or image, extracting its range, label, and target.
+    /// </summary>
+    public bool TryGetLinkAt(int position, out int groupStart, out int groupEnd, out string label, out string target, out bool isImage)
+    {
+        groupStart = groupEnd = 0;
+        label = string.Empty;
+        target = string.Empty;
+        isImage = false;
+
+        BlockLayout? layout = engine.FindBlockFor(position);
+        if (layout is null)
+        {
+            return false;
+        }
+
+        if (layout.Block.Kind == MarkdownBlockKind.Image)
+        {
+            groupStart = layout.Block.Start;
+            groupEnd = layout.Block.End;
+            label = layout.Block.AltText ?? string.Empty;
+            target = layout.Block.Target ?? string.Empty;
+            isImage = true;
+            return true;
+        }
+
+        IReadOnlyList<MarkdownInline> inlines = layout.Block.Inlines;
+        int index = -1;
+        for (int i = 0; i < inlines.Count; i++)
+        {
+            if ((inlines[i].Style & InlineStyle.Link) != 0 && position >= inlines[i].Start && position <= inlines[i].End)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+        {
+            return false;
+        }
+
+        int first = index;
+        while (first > 0 && (inlines[first - 1].Style & InlineStyle.Link) != 0)
+        {
+            first--;
+        }
+
+        int last = index;
+        while (last + 1 < inlines.Count && (inlines[last + 1].Style & InlineStyle.Link) != 0)
+        {
+            last++;
+        }
+
+        groupStart = inlines[first].Start;
+        groupEnd = inlines[last].End;
+
+        StringBuilder labelBuilder = new();
+        for (int i = first; i <= last; i++)
+        {
+            if (!inlines[i].IsSyntax)
+            {
+                labelBuilder.Append(inlines[i].Text);
+            }
+
+            if (inlines[i].LinkTarget is not null)
+            {
+                target = inlines[i].LinkTarget!;
+            }
+        }
+
+        label = labelBuilder.ToString();
+        isImage = groupStart > 0 && document[groupStart - 1] == '!';
+        if (isImage)
+        {
+            groupStart--;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Replaces the link or image at <paramref name="groupStart"/>..<paramref name="groupEnd"/> with a new label.
+    /// </summary>
+    public void RenameLink(int groupStart, int groupEnd, string newLabel, string target, bool isImage)
+    {
+        if (IsReadOnly)
+        {
+            return;
+        }
+
+        string prefix = isImage ? "![" : "[";
+        string replacement = $"{prefix}{newLabel}]({target})";
+        document.Replace(groupStart, groupEnd - groupStart, replacement, MarkdownEditKind.Structural, selection);
+        SetSelection(TextRange.Caret(groupStart + replacement.Length));
+    }
+
+    /// <summary>
+    /// Renames all occurrences of a link/image targeting <paramref name="target"/> with the new name.
+    /// </summary>
+    public void RenameAttachmentLinks(string target, string newFileName)
+    {
+        if (IsReadOnly)
+        {
+            return;
+        }
+
+        string markdown = document.Text;
+        int pos = 0;
+        while ((pos = markdown.IndexOf(target, pos, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            int openParen = markdown.LastIndexOf('(', pos);
+            if (openParen >= 0 && openParen < pos)
+            {
+                int closeBracket = openParen - 1;
+                if (closeBracket >= 0 && markdown[closeBracket] == ']')
+                {
+                    int openBracket = markdown.LastIndexOf('[', closeBracket);
+                    if (openBracket >= 0)
+                    {
+                        int closeParen = markdown.IndexOf(')', pos);
+                        if (closeParen > pos)
+                        {
+                            bool isImage = openBracket > 0 && markdown[openBracket - 1] == '!';
+                            int linkStart = isImage ? openBracket - 1 : openBracket;
+                            int linkEnd = closeParen + 1;
+                            string prefix = isImage ? "![" : "[";
+                            string newLink = $"{prefix}{newFileName}]({target})";
+                            document.Replace(linkStart, linkEnd - linkStart, newLink, MarkdownEditKind.Structural, selection);
+                            markdown = document.Text;
+                            pos = linkStart + newLink.Length;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            pos += target.Length;
+        }
+    }
+
+    internal void ShowLinkContextMenu(global::Windows.Foundation.Point point, int groupStart, int groupEnd, string label, string target, bool isImage)
+    {
+        MenuFlyout menu = new();
+
+        MenuFlyoutItem openLinkItem = new()
+        {
+            Text = "Open link",
+            Icon = new FontIcon { Glyph = "\uE8A7", FontSize = 14 }
+        };
+        openLinkItem.Click += (_, _) =>
+        {
+            LinkInvoked?.Invoke(this, target);
+        };
+        menu.Items.Add(openLinkItem);
+
+        MenuFlyoutItem copyLinkItem = new()
+        {
+            Text = "Copy link",
+            Icon = new FontIcon { Glyph = "\uE8C8", FontSize = 14 }
+        };
+        copyLinkItem.Click += (_, _) =>
+        {
+            DataPackage package = new();
+            package.SetText(target);
+            Clipboard.SetContent(package);
+        };
+        menu.Items.Add(copyLinkItem);
+
+        MenuFlyoutItem renameLabelItem = new()
+        {
+            Text = isImage ? "Rename image label" : "Rename link label",
+            Icon = new FontIcon { Glyph = "\uE8AC", FontSize = 14 }
+        };
+        renameLabelItem.Click += async (_, _) =>
+        {
+            await PromptRenameLinkAsync(groupStart, groupEnd, label, target, isImage);
+        };
+        menu.Items.Add(renameLabelItem);
+
+        menu.ShowAt(canvas, new FlyoutShowOptions { Position = point });
+    }
+
+    public async Task PromptRenameLinkAsync(int groupStart, int groupEnd, string currentLabel, string target, bool isImage)
+    {
+        if (XamlRoot is null)
+        {
+            return;
+        }
+
+        TextBox textBox = new()
+        {
+            Text = currentLabel,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        textBox.Loaded += (_, _) => textBox.SelectAll();
+
+        ContentDialog dialog = new()
+        {
+            Title = isImage ? "Rename image label" : "Rename link label",
+            Content = textBox,
+            PrimaryButtonText = "Rename",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+
+        ContentDialogResult result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(textBox.Text))
+        {
+            string newLabel = textBox.Text.Trim();
+            RenameLink(groupStart, groupEnd, newLabel, target, isImage);
+            LinkRenamed?.Invoke(this, new LinkRenamedEventArgs(target, newLabel));
         }
     }
 }

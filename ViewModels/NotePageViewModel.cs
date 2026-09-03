@@ -222,6 +222,23 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         ScheduleSave();
     }
 
+    public void RenameAttachment(NoteAttachmentItem item, string newFileName)
+    {
+        if (currentNote is null || string.IsNullOrWhiteSpace(newFileName))
+        {
+            return;
+        }
+
+        NoteAttachment? attachment = currentNote.Attachments.FirstOrDefault(value => value.Id == item.Id);
+        if (attachment is not null)
+        {
+            attachment.FileName = newFileName;
+        }
+
+        item.FileName = newFileName;
+        ScheduleSave();
+    }
+
     public async Task<byte[]?> ReadAttachmentAsync(NoteAttachmentItem item)
     {
         try

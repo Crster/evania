@@ -212,8 +212,31 @@ public sealed partial class MarkdownEditor
         {
             int start = range.StartCaretPosition;
             int length = range.EndCaretPosition - range.StartCaretPosition;
+            bool adjustedAtomicInsertion = false;
 
-            TableGuardResult guard = GetTableGuard(new TextRange(start, range.EndCaretPosition), newText);
+            if (length > 0)
+            {
+                TextRange expanded = ExpandSelectionOverAtomicBlockSyntax(new TextRange(start, start + length));
+                adjustedAtomicInsertion = expanded.Min != start || expanded.Length != length;
+                start = expanded.Min;
+                length = expanded.Length;
+            }
+
+            if (length == 0 && TryGetAtomicBlockSyntax(start, out TextRange syntax))
+            {
+                if (newText.Contains('\n') && start > syntax.Min && start <= syntax.Max)
+                {
+                    start = syntax.Min;
+                    adjustedAtomicInsertion = true;
+                }
+                else if (start > syntax.Min && start < syntax.Max)
+                {
+                    start = syntax.Max;
+                    adjustedAtomicInsertion = true;
+                }
+            }
+
+            TableGuardResult guard = GetTableGuard(new TextRange(start, start + length), newText);
             if (guard.Blocked)
             {
                 args.Result = CoreTextTextUpdatingResult.Failed;
@@ -226,7 +249,9 @@ public sealed partial class MarkdownEditor
             document.Replace(start, length, replacement, kind, selection);
 
             CoreTextRange newSelection = args.NewSelection;
-            TextRange resolved = newSelection.StartCaretPosition == newSelection.EndCaretPosition && newSelection.StartCaretPosition == 0
+            TextRange resolved = adjustedAtomicInsertion
+                ? TextRange.Caret(start + replacement.Length)
+                : newSelection.StartCaretPosition == newSelection.EndCaretPosition && newSelection.StartCaretPosition == 0
                 ? TextRange.Caret(start + replacement.Length)
                 : new TextRange(newSelection.StartCaretPosition, newSelection.EndCaretPosition);
 

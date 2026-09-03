@@ -24,6 +24,96 @@
             <Setter Property="AllowFocusOnInteraction" Value="False" />
             <Setter Property="IsTabStop" Value="False" />
         </Style>
+        <!-- Pill buttons carry no chrome of their own: the pill's border is the surface, and the
+             default Button template animates its fill on hover/press over any local Background,
+             which would paint a second rounded rectangle inside the pill. -->
+        <Style x:Key="AttachmentPillButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            ContentTransitions="{TemplateBinding ContentTransitions}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- The remove button is the one pill control that wants feedback, so it carries its own
+             template: the shared pill style has no visual states, and the trash glyph is tinted with
+             the theme's critical brush on hover/press to read as a destructive action. -->
+        <Style
+            x:Key="AttachmentPillDeleteButtonStyle"
+            BasedOn="{StaticResource AttachmentPillButtonStyle}"
+            TargetType="Button">
+            <Setter Property="Padding" Value="2" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter
+                            x:Name="Content"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            ContentTransitions="{TemplateBinding ContentTransitions}"
+                            Foreground="{TemplateBinding Foreground}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <Storyboard>
+                                            <ObjectAnimationUsingKeyFrames
+                                                Storyboard.TargetName="Content"
+                                                Storyboard.TargetProperty="Foreground">
+                                                <DiscreteObjectKeyFrame
+                                                    KeyTime="0"
+                                                    Value="{ThemeResource SystemFillColorCriticalBrush}" />
+                                            </ObjectAnimationUsingKeyFrames>
+                                        </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <Storyboard>
+                                            <ObjectAnimationUsingKeyFrames
+                                                Storyboard.TargetName="Content"
+                                                Storyboard.TargetProperty="Foreground">
+                                                <DiscreteObjectKeyFrame
+                                                    KeyTime="0"
+                                                    Value="{ThemeResource SystemFillColorCriticalBrush}" />
+                                            </ObjectAnimationUsingKeyFrames>
+                                            <DoubleAnimation
+                                                Storyboard.TargetName="Content"
+                                                Storyboard.TargetProperty="Opacity"
+                                                To="0.7"
+                                                Duration="0" />
+                                        </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled" />
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </ContentPresenter>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Page.Resources>
 
     <Grid Padding="32,20,32,24">
@@ -48,6 +138,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
@@ -67,12 +158,23 @@
                         Opacity="0.65" />
                     <TextBox
                         PlaceholderText="Untitled note"
-                        Text="{x:Bind ViewModel.Title, Mode=TwoWay}"
+                        Text="{Binding Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                         FontSize="24"
                         FontWeight="SemiBold"
                         BorderThickness="0"
                         Background="Transparent"
-                        Padding="0" />
+                        Padding="0">
+                        <TextBox.Resources>
+                            <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
+                            <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+                            <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
+                            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+                            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+                            <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
+                            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
+                        </TextBox.Resources>
+                    </TextBox>
                 </StackPanel>
                 <StackPanel
                     Grid.Column="2"
@@ -92,7 +194,7 @@
                 Margin="0,10,0,0"
                 Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
 
-            <!-- Formatting toolbar row: buttons left, attachments toggle right -->
+            <!-- Formatting toolbar row -->
             <Grid Grid.Row="2" Margin="0,4,0,4">
                 <ScrollViewer
                     HorizontalScrollMode="Auto"
@@ -104,110 +206,106 @@
                         Orientation="Horizontal"
                         Spacing="2"
                         HorizontalAlignment="Left">
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Bold" Click="Bold_Click"><FontIcon Glyph="&#xE8DD;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Italic" Click="Italic_Click"><FontIcon Glyph="&#xE8DB;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Strikethrough" Click="Strikethrough_Click"><FontIcon Glyph="&#xEDE0;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Highlight" Click="Highlight_Click"><FontIcon Glyph="&#xE7E6;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Inline code" Click="Code_Click"><FontIcon Glyph="&#xE84B;" FontSize="14" /></Button>
-                    <Rectangle Width="1" Height="16" Margin="6,0" Opacity="0.25" Fill="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Heading 1" Click="Heading1_Click"><TextBlock Text="H1" FontSize="12" FontWeight="SemiBold" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Heading 2" Click="Heading2_Click"><TextBlock Text="H2" FontSize="12" FontWeight="SemiBold" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Heading 3" Click="Heading3_Click"><TextBlock Text="H3" FontSize="12" FontWeight="SemiBold" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Quote" Click="Blockquote_Click"><FontIcon Glyph="&#xE90A;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Bulleted list" Click="List_Click"><FontIcon Glyph="&#xE8FD;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Numbered list" Click="OrderedList_Click"><FontIcon Glyph="&#xE700;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Task list" Click="TaskList_Click"><FontIcon Glyph="&#xE73A;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Table" Click="Table_Click"><FontIcon Glyph="&#xE80A;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Horizontal rule" Click="HorizontalRule_Click"><FontIcon Glyph="&#xE738;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Code block" Click="CodeBlock_Click"><FontIcon Glyph="&#xE943;" FontSize="14" /></Button>
-                    <Rectangle Width="1" Height="16" Margin="6,0" Opacity="0.25" Fill="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Insert image" Click="Image_Click"><FontIcon Glyph="&#xE8B9;" FontSize="14" /></Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Attach file" Click="File_Click"><FontIcon Glyph="&#xE723;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Heading 1" Click="Heading1_Click"><TextBlock Text="H1" FontSize="12" FontWeight="SemiBold" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Heading 2" Click="Heading2_Click"><TextBlock Text="H2" FontSize="12" FontWeight="SemiBold" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Heading 3" Click="Heading3_Click"><TextBlock Text="H3" FontSize="12" FontWeight="SemiBold" /></Button>
+                        <Rectangle Width="1" Height="16" Margin="6,0" Opacity="0.25" Fill="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Bold" Click="Bold_Click"><FontIcon Glyph="&#xE8DD;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Italic" Click="Italic_Click"><FontIcon Glyph="&#xE8DB;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Strikethrough" Click="Strikethrough_Click"><FontIcon Glyph="&#xEDE0;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Highlight" Click="Highlight_Click"><FontIcon Glyph="&#xE7E6;" FontSize="14" /></Button>
+                        <Rectangle Width="1" Height="16" Margin="6,0" Opacity="0.25" Fill="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Bulleted list" Click="List_Click"><FontIcon Glyph="&#xE8FD;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Numbered list" Click="OrderedList_Click"><FontIcon Glyph="&#xE700;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Task list" Click="TaskList_Click"><FontIcon Glyph="&#xE73A;" FontSize="14" /></Button>
+                        <Rectangle Width="1" Height="16" Margin="6,0" Opacity="0.25" Fill="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Inline code" Click="Code_Click"><FontIcon Glyph="&#xE84B;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Code block" Click="CodeBlock_Click"><FontIcon Glyph="&#xE943;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Quote" Click="Blockquote_Click"><FontIcon Glyph="&#xE90A;" FontSize="14" /></Button>
+                        <Rectangle Width="1" Height="16" Margin="6,0" Opacity="0.25" Fill="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Table" Click="Table_Click"><FontIcon Glyph="&#xE80A;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Horizontal rule" Click="HorizontalRule_Click"><FontIcon Glyph="&#xE738;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Date and time" Click="DateTime_Click"><FontIcon Glyph="&#xEC92;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="UUIDv7" Click="Uuid_Click"><FontIcon Glyph="&#xE8EC;" FontSize="14" /></Button>
+                        <Rectangle Width="1" Height="16" Margin="6,0" Opacity="0.25" Fill="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Insert image" Click="Image_Click"><FontIcon Glyph="&#xE8B9;" FontSize="14" /></Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Attach file" Click="File_Click"><FontIcon Glyph="&#xE723;" FontSize="14" /></Button>
                     </StackPanel>
                 </ScrollViewer>
-                <ToggleButton
-                    x:Name="AttachmentsToggle"
-                    HorizontalAlignment="Right"
-                    Style="{StaticResource ToolbarButtonStyle}"
-                    ToolTipService.ToolTip="Attachments"
-                    VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xE723;" FontSize="14" />
-                        <TextBlock Text="Attachments" FontSize="12" />
-                    </StackPanel>
-                </ToggleButton>
             </Grid>
 
-            <!-- Editor + attachments sidebar -->
-            <Grid Grid.Row="3" ColumnSpacing="0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <editor:MarkdownEditor
-                    x:Name="Editor"
-                    PlaceholderText="Start writing..."
-                    Padding="16,12,16,12"
-                    Margin="0,4,0,0"
-                    MarkdownChanged="Editor_MarkdownChanged"
-                    LinkInvoked="Editor_LinkInvoked" />
-
-                <!-- Attachments sidebar -->
-                <Border
-                    Grid.Column="1"
-                    Width="280"
-                    Padding="16,12,0,0"
-                    Visibility="{x:Bind AttachmentsToggle.IsChecked, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <Grid>
-                        <Rectangle
-                            Width="1"
-                            HorizontalAlignment="Left"
-                            Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                        <StackPanel Margin="16,0,0,0" Spacing="8">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE723;" FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
-                                <TextBlock Text="Attachments" FontSize="12" FontWeight="SemiBold" Opacity="0.7" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <ListView
-                                ItemsSource="{x:Bind ViewModel.Attachments}"
-                                SelectionMode="None"
-                                Background="Transparent">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" Padding="0,2">
-                                            <FontIcon Glyph="&#xE723;" VerticalAlignment="Center" />
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding SizeText}" FontSize="11" Opacity="0.6" />
-                                            </StackPanel>
+                        <!-- Attachment pills -->
+                        <ItemsControl
+                            Grid.Row="3"
+                            ItemsSource="{x:Bind ViewModel.Attachments}"
+                            Margin="0,4,0,0">
+                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        CornerRadius="12"
+                                        Padding="8,4,4,4"
+                                        Margin="0,0,6,4"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1">
+                                        <Border.ContextFlyout>
+                                            <MenuFlyout>
+                                                <MenuFlyoutItem Text="Open" Click="AttachmentOpen_Click">
+                                                    <MenuFlyoutItem.Icon>
+                                                        <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                                    </MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                                <MenuFlyoutItem Text="Copy link" Click="AttachmentCopyLink_Click">
+                                                    <MenuFlyoutItem.Icon>
+                                                        <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                                                    </MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                                <MenuFlyoutItem Text="Rename" Click="AttachmentRename_Click">
+                                                    <MenuFlyoutItem.Icon>
+                                                        <FontIcon Glyph="&#xE8AC;" FontSize="14" />
+                                                    </MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                            </MenuFlyout>
+                                        </Border.ContextFlyout>
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
                                             <Button
-                                                Grid.Column="2"
+                                                Style="{StaticResource AttachmentPillButtonStyle}"
                                                 Tag="{Binding}"
-                                                Click="OpenAttachment_Click"
-                                                Background="Transparent"
-                                                ToolTipService.ToolTip="Open attachment">
-                                                <SymbolIcon Symbol="OpenFile" />
+                                                Click="AttachmentPill_Click">
+                                                <TextBlock
+                                                    Text="{Binding FileName}"
+                                                    FontSize="12"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    MaxWidth="200"
+                                                    VerticalAlignment="Center" />
                                             </Button>
                                             <Button
-                                                Grid.Column="3"
+                                                Style="{StaticResource AttachmentPillDeleteButtonStyle}"
                                                 Tag="{Binding}"
-                                                Click="RemoveAttachment_Click"
-                                                Background="Transparent"
+                                                Click="AttachmentPillDelete_Click"
                                                 ToolTipService.ToolTip="Remove attachment">
-                                                <SymbolIcon Symbol="Delete" />
+                                                <FontIcon Glyph="&#xE74D;" FontSize="12" />
                                             </Button>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                            <TextBlock
-                                Text="No attachments yet."
-                                FontSize="12"
-                                Opacity="0.5" />
-                        </StackPanel>
-                    </Grid>
-                </Border>
-            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Editor -->
+                        <editor:MarkdownEditor
+                            Grid.Row="4"
+                            x:Name="Editor"
+                            PlaceholderText="Start writing..."
+                            Padding="0,12,0,12"
+                            Margin="0,4,0,0"
+                            MarkdownChanged="Editor_MarkdownChanged"
+                            LinkInvoked="Editor_LinkInvoked" />
         </Grid>
 
         <Grid

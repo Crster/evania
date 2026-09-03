@@ -75,9 +75,15 @@ public partial class NoteListItem : ObservableObject
 
 public partial class NoteAttachmentItem : ObservableObject
 {
+    private string fileName = string.Empty;
+
     public required string Id { get; init; }
 
-    public required string FileName { get; init; }
+    public required string FileName
+    {
+        get => fileName;
+        set => SetProperty(ref fileName, value);
+    }
 
     public required string ContentType { get; init; }
 

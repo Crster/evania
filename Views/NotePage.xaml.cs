@@ -1,12 +1,15 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+using Evania.Controls.MarkdownEditor;
 using Evania.Models;
 using Evania.Services;
 using Evania.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 
@@ -32,6 +35,7 @@ public sealed partial class NotePage : Page
         DataContext = ViewModel;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         Editor.ImageResolver = ResolveImageAsync;
+        Editor.LinkRenamed += Editor_LinkRenamed;
     }
 
     /// <summary>
@@ -119,7 +123,7 @@ public sealed partial class NotePage : Page
 
     private async void Editor_LinkInvoked(object? sender, string target) => await OpenLinkAsync(target);
 
-    // --- toolbar ------------------------------------------------------------------------------
+        // --- toolbar ------------------------------------------------------------------------------
 
     private void Bold_Click(object sender, RoutedEventArgs e) => Editor.ToggleBold();
 
@@ -149,6 +153,10 @@ public sealed partial class NotePage : Page
 
     private void HorizontalRule_Click(object sender, RoutedEventArgs e) => Editor.InsertHorizontalRule();
 
+    private void DateTime_Click(object sender, RoutedEventArgs e) => Editor.InsertDateTime();
+
+    private void Uuid_Click(object sender, RoutedEventArgs e) => Editor.InsertUuid7();
+
     private void CodeBlock_Click(object sender, RoutedEventArgs e) => Editor.ToggleCodeBlock();
 
     /// <summary>
@@ -172,7 +180,7 @@ public sealed partial class NotePage : Page
 
     private async void File_Click(object sender, RoutedEventArgs e)
     {
-        StorageFile? file = await PickFileAsync(new[] { ".*" });
+        StorageFile? file = await PickFileAsync(new[] { "*" });
         if (file is null)
         {
             return;
@@ -195,6 +203,72 @@ public sealed partial class NotePage : Page
         await OpenAttachmentAsync(item);
     }
 
+    private async void AttachmentOpen_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: NoteAttachmentItem item })
+        {
+            await OpenAttachmentAsync(item);
+        }
+    }
+
+    private void AttachmentCopyLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: NoteAttachmentItem item })
+        {
+            string target = AttachmentLinkPrefix + item.Id;
+            DataPackage package = new();
+            package.SetText(target);
+            Clipboard.SetContent(package);
+        }
+    }
+
+    private async void AttachmentRename_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: NoteAttachmentItem item } || XamlRoot is null)
+        {
+            return;
+        }
+
+        TextBox textBox = new()
+        {
+            Text = item.FileName,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        textBox.Loaded += (_, _) => textBox.SelectAll();
+
+        ContentDialog dialog = new()
+        {
+            Title = "Rename attachment",
+            Content = textBox,
+            PrimaryButtonText = "Rename",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+
+        ContentDialogResult result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(textBox.Text))
+        {
+            string newName = textBox.Text.Trim();
+            string target = AttachmentLinkPrefix + item.Id;
+            ViewModel.RenameAttachment(item, newName);
+            Editor.RenameAttachmentLinks(target, newName);
+        }
+    }
+
+    private void Editor_LinkRenamed(object? sender, LinkRenamedEventArgs e)
+    {
+        if (e.Target.StartsWith(AttachmentLinkPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string id = Uri.UnescapeDataString(e.Target[AttachmentLinkPrefix.Length..]);
+            NoteAttachmentItem? item = ViewModel.Attachments.FirstOrDefault(a => a.Id == id);
+            if (item is not null)
+            {
+                ViewModel.RenameAttachment(item, e.NewLabel);
+            }
+        }
+    }
+
     private void RemoveAttachment_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: NoteAttachmentItem item })
@@ -203,17 +277,140 @@ public sealed partial class NotePage : Page
         }
     }
 
+    private void AttachmentPill_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: NoteAttachmentItem item })
+        {
+            return;
+        }
+
+        string target = AttachmentLinkPrefix + item.Id;
+        if (item.IsImage)
+        {
+            Editor.InsertImage(target, item.FileName);
+        }
+        else
+        {
+            Editor.AppendAttachmentLink(item.FileName, target, isImage: false);
+        }
+    }
+
+    private void AttachmentPillDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: NoteAttachmentItem item })
+        {
+            return;
+        }
+
+        string target = AttachmentLinkPrefix + item.Id;
+        RemoveAttachmentLinkFromMarkdown(target);
+        ViewModel.RemoveAttachment(item);
+    }
+
+    /// <summary>
+    /// Removes all markdown links and images that reference <paramref name="target"/>.
+    /// </summary>
+    private void RemoveAttachmentLinkFromMarkdown(string target)
+    {
+        string markdown = Editor.Markdown;
+        if (markdown.Length == 0)
+        {
+            return;
+        }
+
+        int pos = 0;
+        while ((pos = markdown.IndexOf(target, pos, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            // Find the start of the enclosing link or image syntax.
+            int linkStart = pos;
+            int linkEnd = pos + target.Length;
+
+            if (linkStart > 0 && markdown[linkStart - 1] == '(')
+            {
+                linkStart--; // include '('
+                if (linkEnd < markdown.Length && markdown[linkEnd] == ')')
+                {
+                    linkEnd++; // include ')'
+                }
+
+                // Walk back to find '[' or '!['.
+                if (linkStart > 0 && markdown[linkStart - 1] is ']')
+                {
+                    int bracketDepth = 1;
+                    int scan = linkStart - 2;
+                    while (scan >= 0)
+                    {
+                        if (markdown[scan] == ']')
+                        {
+                            bracketDepth++;
+                        }
+                        else if (markdown[scan] == '[')
+                        {
+                            bracketDepth--;
+                            if (bracketDepth == 0)
+                            {
+                                if (scan > 0 && markdown[scan - 1] == '!')
+                                {
+                                    scan--;
+                                }
+
+                                linkStart = scan;
+                                break;
+                            }
+                        }
+
+                        scan--;
+                    }
+                }
+            }
+
+            // Remove the link/image plus the preceding newline if it exists.
+            if (linkStart > 0 && markdown[linkStart - 1] == '\n')
+            {
+                linkStart--;
+            }
+
+            string before = markdown[..linkStart];
+            string after = linkEnd < markdown.Length ? markdown[linkEnd..] : string.Empty;
+            markdown = before + after;
+            pos = linkStart;
+        }
+
+        Editor.Markdown = markdown;
+    }
+
     // --- links and attachments ----------------------------------------------------------------
 
     private static bool IsWebUrl(string text) =>
         Uri.TryCreate(text, UriKind.Absolute, out Uri? uri)
         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
-    private static async Task OpenLinkAsync(string link)
+    private async Task OpenLinkAsync(string link)
     {
-        if (link.StartsWith(AttachmentLinkPrefix, StringComparison.OrdinalIgnoreCase) || IsWebUrl(link))
+        if (link.StartsWith(AttachmentLinkPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string id = Uri.UnescapeDataString(link[AttachmentLinkPrefix.Length..]);
+            await OpenAttachmentByIdAsync(id);
+        }
+        else if (IsWebUrl(link))
         {
             await global::Windows.System.Launcher.LaunchUriAsync(new Uri(link));
+        }
+    }
+
+    private async Task OpenAttachmentByIdAsync(string id)
+    {
+        try
+        {
+            byte[] bytes = await NoteService.ReadAttachmentAsync(id);
+            string fileName = await NoteService.GetAttachmentFileNameAsync(id);
+
+            StorageFile file = await CreateTempFileAsync(fileName, bytes);
+            await global::Windows.System.Launcher.LaunchFileAsync(file);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Attachment open failed for '{id}': {ex.Message}");
         }
     }
 
@@ -225,11 +422,34 @@ public sealed partial class NotePage : Page
             return;
         }
 
+        StorageFile file = await CreateTempFileAsync(item.FileName, bytes);
+        await global::Windows.System.Launcher.LaunchFileAsync(file);
+    }
+
+    /// <summary>
+    /// Writes <paramref name="bytes"/> to a temporary file, normalising the name so
+    /// <see cref="global::Windows.System.Launcher.LaunchFileAsync"/> can find a handler even for
+    /// dotfiles like <c>.gitignore</c> that have no Windows file extension.
+    /// </summary>
+    private static async Task<StorageFile> CreateTempFileAsync(string fileName, byte[] bytes)
+    {
+        string safeName = NormalizeTempFileName(fileName);
         StorageFile file = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(
-            item.FileName,
+            safeName,
             CreationCollisionOption.GenerateUniqueName);
         await FileIO.WriteBytesAsync(file, bytes);
-        await global::Windows.System.Launcher.LaunchFileAsync(file);
+        return file;
+    }
+
+    /// <summary>
+    /// Dotfiles have no extension in Windows, so <c>LaunchFileAsync</c> cannot pick a handler.
+    /// Appending <c>.txt</c> gives them a recognisable type so they open in a text editor.
+    /// </summary>
+    private static string NormalizeTempFileName(string fileName)
+    {
+        return fileName.Length > 0 && fileName[0] == '.' && fileName.IndexOf('.', 1) < 0
+            ? fileName + ".txt"
+            : fileName;
     }
 
     private async Task<NoteAttachmentItem?> AddAttachmentAsync(StorageFile file, bool isImage)

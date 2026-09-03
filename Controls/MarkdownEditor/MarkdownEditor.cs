@@ -125,6 +125,9 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     /// <summary>Raised when the user activates a link or an image.</summary>
     public event EventHandler<string>? LinkInvoked;
 
+    /// <summary>Raised when the user renames a link label.</summary>
+    public event EventHandler<LinkRenamedEventArgs>? LinkRenamed;
+
     public static readonly DependencyProperty MarkdownProperty = DependencyProperty.Register(
         nameof(Markdown),
         typeof(string),
@@ -610,6 +613,11 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     {
         int max = document.Length;
         range = new TextRange(Math.Clamp(range.Start, 0, max), Math.Clamp(range.End, 0, max));
+        if (range.IsEmpty && TryGetAtomicBlockSyntax(range.End, out TextRange syntax)
+            && range.End > syntax.Min && range.End < syntax.Max)
+        {
+            range = TextRange.Caret(syntax.Max);
+        }
 
         bool blockChanged = engine.FindBlockFor(selection.End)?.Block.Start != engine.FindBlockFor(range.End)?.Block.Start;
         MarkdownEditorLog.Write($"selection {selection.Start}..{selection.End} -> {range.Start}..{range.End} blockChanged={blockChanged}");
@@ -727,4 +735,17 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         // alive after the control goes away.
         canvas.RemoveFromVisualTree();
     }
+}
+
+public sealed class LinkRenamedEventArgs : EventArgs
+{
+    public LinkRenamedEventArgs(string target, string newLabel)
+    {
+        Target = target;
+        NewLabel = newLabel;
+    }
+
+    public string Target { get; }
+
+    public string NewLabel { get; }
 }

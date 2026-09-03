@@ -18,8 +18,8 @@ internal static class MarkdownEditorLog
 {
     private const string Category = "MarkdownEditor";
 
-    /// <summary>Set to false to silence the editor without removing the call sites.</summary>
-    internal static bool IsEnabled { get; set; } = true;
+    /// <summary>Set to true to re-enable editor tracing during diagnosis.</summary>
+    internal static bool IsEnabled { get; set; } = false;
 
     [Conditional("DEBUG")]
     internal static void Write(string message, [CallerMemberName] string caller = "")

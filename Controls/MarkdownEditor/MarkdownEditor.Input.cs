@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -30,9 +31,29 @@ public sealed partial class MarkdownEditor
         canvas.PointerMoved += OnCanvasPointerMoved;
         canvas.PointerReleased += OnCanvasPointerReleased;
         canvas.PointerExited += OnCanvasPointerExited;
+        canvas.RightTapped += OnCanvasRightTapped;
 
         KeyDown += OnEditorKeyDown;
         CharacterReceived += OnEditorCharacterReceived;
+    }
+
+    private void OnCanvasRightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        global::Windows.Foundation.Point point = e.GetPosition(canvas);
+        int position = HitTestDocument(point);
+
+        if (FindImageBlockAt(point) is BlockLayout image)
+        {
+            ShowLinkContextMenu(point, image.Block.Start, image.Block.End, image.Block.AltText ?? string.Empty, image.Block.Target ?? string.Empty, isImage: true);
+            e.Handled = true;
+            return;
+        }
+
+        if (TryGetLinkAt(position, out int groupStart, out int groupEnd, out string label, out string target, out bool isImage))
+        {
+            ShowLinkContextMenu(point, groupStart, groupEnd, label, target, isImage);
+            e.Handled = true;
+        }
     }
 
     /// <summary>
@@ -76,8 +97,15 @@ public sealed partial class MarkdownEditor
     /// <summary>
     /// Replaces the selection with <paramref name="text"/> and places the caret after it.
     /// </summary>
-    private void InsertText(string text)
+    public void InsertText(string text)
     {
+        if (IsReadOnly)
+        {
+            return;
+        }
+
+        EscapeImageBlock();
+
         MarkdownEditorLog.Write($"insert {MarkdownEditorLog.Snippet(text)} over {selection.Min}..{selection.Max}");
 
         TableGuardResult guard = GetTableGuard(selection, text);
@@ -460,6 +488,89 @@ public sealed partial class MarkdownEditor
         => SetSelection(extend ? new TextRange(selection.Start, position) : TextRange.Caret(position));
 
     /// <summary>
+    /// Finds block-level markdown syntax that must remain indivisible while editing. Inline syntax is
+    /// deliberately excluded because emphasis, links, and similar spans remain directly editable.
+    /// </summary>
+    private bool TryGetAtomicBlockSyntax(int position, out TextRange syntax)
+    {
+        foreach (MarkdownBlock block in MarkdownParser.Parse(document))
+        {
+            if (position < block.Start)
+            {
+                break;
+            }
+
+            if (position > block.End || block.Inlines.Count == 0)
+            {
+                continue;
+            }
+
+            bool isAtomicBlock = block.Kind is MarkdownBlockKind.Heading
+                or MarkdownBlockKind.Quote
+                or MarkdownBlockKind.BulletItem
+                or MarkdownBlockKind.OrderedItem
+                or MarkdownBlockKind.TaskItem
+                or MarkdownBlockKind.ThematicBreak
+                or MarkdownBlockKind.Image;
+            MarkdownInline marker = block.Inlines[0];
+            if (isAtomicBlock && marker.IsSyntax && marker.Start == block.Start
+                && position >= marker.Start && position <= marker.End)
+            {
+                syntax = new TextRange(marker.Start, marker.End);
+                return true;
+            }
+        }
+
+        syntax = default;
+        return false;
+    }
+
+    private int NormalizeAtomicBlockPosition(int position, int direction)
+    {
+        if (!TryGetAtomicBlockSyntax(position, out TextRange syntax)
+            || position == syntax.Min || position == syntax.Max)
+        {
+            return position;
+        }
+
+        return direction < 0 ? syntax.Min : syntax.Max;
+    }
+
+    private TextRange ExpandSelectionOverAtomicBlockSyntax(TextRange range)
+    {
+        if (range.IsEmpty)
+        {
+            return range;
+        }
+
+        int min = range.Min;
+        int max = range.Max;
+        foreach (MarkdownBlock block in MarkdownParser.Parse(document))
+        {
+            if (block.Inlines.Count == 0 || max <= block.Start)
+            {
+                continue;
+            }
+
+            MarkdownInline marker = block.Inlines[0];
+            bool isAtomicBlock = block.Kind is MarkdownBlockKind.Heading
+                or MarkdownBlockKind.Quote
+                or MarkdownBlockKind.BulletItem
+                or MarkdownBlockKind.OrderedItem
+                or MarkdownBlockKind.TaskItem
+                or MarkdownBlockKind.ThematicBreak
+                or MarkdownBlockKind.Image;
+            if (isAtomicBlock && marker.IsSyntax && min < marker.End && max > marker.Start)
+            {
+                min = Math.Min(min, marker.Start);
+                max = Math.Max(max, marker.End);
+            }
+        }
+
+        return range.Start <= range.End ? new TextRange(min, max) : new TextRange(max, min);
+    }
+
+    /// <summary>
     /// Steps one caret position, treating a surrogate pair or CRLF-free newline as a single unit so the
     /// caret never lands inside a character.
     /// </summary>
@@ -501,7 +612,7 @@ public sealed partial class MarkdownEditor
             next++;
         }
 
-        return next;
+        return NormalizeAtomicBlockPosition(next, direction);
     }
 
     /// <summary>
@@ -559,6 +670,12 @@ public sealed partial class MarkdownEditor
 
         if (!selection.IsEmpty)
         {
+            selection = ExpandSelectionOverAtomicBlockSyntax(selection);
+            if (TryRemoveLinkGroupForSelection())
+            {
+                return;
+            }
+
             DeleteSelectionPreservingTable();
             return;
         }
@@ -584,7 +701,20 @@ public sealed partial class MarkdownEditor
             return;
         }
 
+        // An inline attachment link hides its [ and ](url) punctuation, so backspacing that would eat
+        // a bracket or empty the label removes the whole link rather than leaving "](url)" behind.
+        if (TryRemoveLinkGroupBackward())
+        {
+            return;
+        }
+
         int start = GetAdjacentPosition(selection.End, -1);
+
+        if (TryGetAtomicBlockSyntax(selection.End, out TextRange syntax)
+            && selection.End > syntax.Min && selection.End <= syntax.Max)
+        {
+            start = syntax.Min;
+        }
 
         // The pipes and row breaks of a grid-rendered table are structure, not text: they are invisible
         // here, so deleting one breaks the table without the user being able to see why.
@@ -607,6 +737,12 @@ public sealed partial class MarkdownEditor
 
         if (!selection.IsEmpty)
         {
+            selection = ExpandSelectionOverAtomicBlockSyntax(selection);
+            if (TryRemoveLinkGroupForSelection())
+            {
+                return;
+            }
+
             DeleteSelectionPreservingTable();
             return;
         }
@@ -624,7 +760,20 @@ public sealed partial class MarkdownEditor
             return;
         }
 
+        // Deleting forward into the start of an inline attachment link removes the whole link rather
+        // than exposing its hidden ](url) punctuation.
+        if (TryRemoveLinkGroupForward())
+        {
+            return;
+        }
+
         int end = GetAdjacentPosition(selection.End, 1);
+
+        if (TryGetAtomicBlockSyntax(selection.End, out TextRange syntax)
+            && selection.End >= syntax.Min && selection.End < syntax.Max)
+        {
+            end = syntax.Max;
+        }
 
         if (IsTableStructure(selection.End, end - selection.End))
         {
@@ -718,6 +867,265 @@ public sealed partial class MarkdownEditor
         }
 
         MarkdownEditorLog.Write($"deleting image block {start}..{end} {MarkdownEditorLog.Snippet(block.AltText)}");
+        SetSelection(document.Replace(start, end - start, string.Empty, MarkdownEditKind.Deleting, selection));
+    }
+
+    /// <summary>
+    /// Locates the inline link group (the contiguous run of link-styled spans that spells
+    /// <c>[label](url)</c>) whose source range contains <paramref name="position"/>. The <c>[</c> and
+    /// <c>](url)</c> punctuation is hidden, so a delete that eats one of those characters - or the last
+    /// visible label character - must take the whole link rather than stranding "](url)" as text.
+    /// </summary>
+    private bool TryGetLinkGroupAt(
+        int position,
+        out int groupStart,
+        out int groupEnd,
+        out bool positionIsSyntax,
+        out int visibleLength)
+    {
+        groupStart = groupEnd = 0;
+        positionIsSyntax = false;
+        visibleLength = 0;
+
+        BlockLayout? layout = engine.FindBlockFor(position);
+        if (layout is null)
+        {
+            return false;
+        }
+
+        IReadOnlyList<MarkdownInline> inlines = layout.Block.Inlines;
+        int index = -1;
+        for (int i = 0; i < inlines.Count; i++)
+        {
+            if ((inlines[i].Style & InlineStyle.Link) != 0 && position >= inlines[i].Start && position < inlines[i].End)
+            {
+                index = i;
+                positionIsSyntax = inlines[i].IsSyntax;
+                break;
+            }
+        }
+
+        if (index < 0)
+        {
+            return false;
+        }
+
+        int first = index;
+        while (first > 0 && (inlines[first - 1].Style & InlineStyle.Link) != 0)
+        {
+            first--;
+        }
+
+        int last = index;
+        while (last + 1 < inlines.Count && (inlines[last + 1].Style & InlineStyle.Link) != 0)
+        {
+            last++;
+        }
+
+        groupStart = inlines[first].Start;
+        groupEnd = inlines[last].End;
+
+        for (int i = first; i <= last; i++)
+        {
+            if (!inlines[i].IsSyntax)
+            {
+                visibleLength += inlines[i].Length;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Backspace at the caret: removes the whole link when the character being eaten is hidden link
+    /// punctuation, or when it is the last visible label character, so "](url)" never survives.
+    /// </summary>
+    private bool TryRemoveLinkGroupBackward()
+    {
+        int delStart = GetAdjacentPosition(selection.End, -1);
+        if (delStart >= selection.End)
+        {
+            return false;
+        }
+
+        if (!TryGetLinkGroupAt(delStart, out int groupStart, out int groupEnd, out bool isSyntax, out int visibleLength))
+        {
+            return false;
+        }
+
+        if (!isSyntax && visibleLength > 1)
+        {
+            return false;
+        }
+
+        RemoveLinkRange(groupStart, groupEnd);
+        return true;
+    }
+
+    /// <summary>
+    /// Delete at the caret: mirrors the backspace case for a caret parked just before a link.
+    /// </summary>
+    private bool TryRemoveLinkGroupForward()
+    {
+        if (!TryGetLinkGroupAt(selection.End, out int groupStart, out int groupEnd, out bool isSyntax, out int visibleLength))
+        {
+            return false;
+        }
+
+        if (!isSyntax && visibleLength > 1)
+        {
+            return false;
+        }
+
+        RemoveLinkRange(groupStart, groupEnd);
+        return true;
+    }
+
+    /// <summary>
+    /// Backspace/Delete over a selection: a selection that already spans the whole link deletes
+    /// cleanly, but one that eats a hidden bracket/paren or empties the label would strand "](url)"
+    /// or an empty link, so expand to the full group first. A partial edit inside the label is left
+    /// to the normal path so selecting part of a filename does not delete the attachment.
+    /// </summary>
+    private bool TryRemoveLinkGroupForSelection()
+    {
+        int selStart = selection.Min;
+        int selEnd = selection.Max;
+
+        // The selection can clip a link at either end, so probe both boundary blocks.
+        foreach (int probe in new[] { selStart, selEnd - 1 })
+        {
+            BlockLayout? layout = engine.FindBlockFor(probe);
+            if (layout is null)
+            {
+                continue;
+            }
+
+            if (TryFindClippedLinkGroup(layout.Block.Inlines, selStart, selEnd, out int groupStart, out int groupEnd, out bool mustRemove))
+            {
+                return mustRemove && RemoveClippedLink(selStart, selEnd, groupStart, groupEnd);
+            }
+        }
+
+        return false;
+    }
+
+    private bool RemoveClippedLink(int selStart, int selEnd, int groupStart, int groupEnd)
+    {
+        RemoveLinkRange(Math.Min(selStart, groupStart), Math.Max(selEnd, groupEnd));
+        return true;
+    }
+
+    /// <summary>
+    /// Finds the link group (consecutive link-styled spans) that <paramref name="selStart"/>..<paramref name="selEnd"/>
+    /// clips into, reporting its full source range and whether deleting the selection would break it.
+    /// Returns false when the selection touches no link.
+    /// </summary>
+    private static bool TryFindClippedLinkGroup(
+        IReadOnlyList<MarkdownInline> inlines,
+        int selStart,
+        int selEnd,
+        out int groupStart,
+        out int groupEnd,
+        out bool mustRemove)
+    {
+        groupStart = groupEnd = 0;
+        mustRemove = false;
+
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i < inlines.Count; i++)
+        {
+            if ((inlines[i].Style & InlineStyle.Link) != 0 && inlines[i].End > selStart && inlines[i].Start < selEnd)
+            {
+                if (first < 0)
+                {
+                    first = i;
+                }
+
+                last = i;
+            }
+        }
+
+        if (first < 0)
+        {
+            return false;
+        }
+
+        // Expand out to the whole group even when the selection only clipped part of it.
+        while (first > 0 && (inlines[first - 1].Style & InlineStyle.Link) != 0)
+        {
+            first--;
+        }
+
+        while (last + 1 < inlines.Count && (inlines[last + 1].Style & InlineStyle.Link) != 0)
+        {
+            last++;
+        }
+
+        groupStart = inlines[first].Start;
+        groupEnd = inlines[last].End;
+
+        // A selection that already covers the whole link deletes cleanly through the normal path.
+        if (groupStart >= selStart && groupEnd <= selEnd)
+        {
+            return false;
+        }
+
+        int labelStart = int.MaxValue;
+        int labelEnd = int.MinValue;
+        for (int i = first; i <= last; i++)
+        {
+            if (inlines[i].IsSyntax)
+            {
+                if (inlines[i].End > selStart && inlines[i].Start < selEnd)
+                {
+                    mustRemove = true;
+                }
+            }
+            else if (inlines[i].Length > 0)
+            {
+                labelStart = Math.Min(labelStart, inlines[i].Start);
+                labelEnd = Math.Max(labelEnd, inlines[i].End);
+            }
+        }
+
+        // Emptying the label leaves an invisible "[](url)" stub, so treat that as removing the link.
+        if (labelStart != int.MaxValue && selStart <= labelStart && selEnd >= labelEnd)
+        {
+            mustRemove = true;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Deletes <paramref name="start"/>..<paramref name="end"/>. When the removed link was alone on its
+    /// line the line break goes with it, so no blank line is left where the attachment was.
+    /// </summary>
+    private void RemoveLinkRange(int start, int end)
+    {
+        if (start >= end)
+        {
+            return;
+        }
+
+        bool aloneOnLine = (start == 0 || document[start - 1] == '\n')
+            && (end >= document.Length || document[end] == '\n');
+
+        if (aloneOnLine)
+        {
+            if (end < document.Length && document[end] == '\n')
+            {
+                end++;
+            }
+            else if (start > 0 && document[start - 1] == '\n')
+            {
+                start--;
+            }
+        }
+
+        MarkdownEditorLog.Write($"removing attachment link {start}..{end}");
         SetSelection(document.Replace(start, end - start, string.Empty, MarkdownEditKind.Deleting, selection));
     }
 

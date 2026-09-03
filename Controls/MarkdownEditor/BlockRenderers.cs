@@ -480,7 +480,7 @@ internal static class BlockRenderers
                 break;
 
             case MarkdownBlockKind.ThematicBreak:
-                session.FillRectangle(0, y + (RuleHeight / 2f), contentWidth, 1f, theme.Divider);
+                session.FillRectangle(0, y + ((RuleHeight - 3f) / 2f), contentWidth, 3f, theme.Divider);
                 break;
 
             case MarkdownBlockKind.Image:

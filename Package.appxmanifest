@@ -1,75 +1,79 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:uap6="http://schemas.microsoft.com/appx/manifest/uap/windows10/6"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
-  IgnorableNamespaces="uap uap5 rescap systemai">
+  IgnorableNamespaces="mp uap uap3 uap5 uap6 rescap">
 
-  <Identity
-    Name="6d49ca0a-c00b-4ae7-8f12-1e03f16b71c4"
-    Publisher="CN=Crster"
-    Version="1.0.0.0" />
+	<Identity
+	  Name="6d49ca0a-c00b-4ae7-8f12-1e03f16b71c4"
+	  Publisher="CN=Crster"
+	  Version="1.0.0.0" />
 
-  <mp:PhoneIdentity PhoneProductId="6d49ca0a-c00b-4ae7-8f12-1e03f16b71c4" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+	<mp:PhoneIdentity PhoneProductId="6d49ca0a-c00b-4ae7-8f12-1e03f16b71c4" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
-  <Properties>
-    <DisplayName>Evania</DisplayName>
-    <PublisherDisplayName>Crster</PublisherDisplayName>
-    <Logo>Assets\StoreLogo.png</Logo>
-  </Properties>
+	<Properties>
+		<DisplayName>Evania</DisplayName>
+		<PublisherDisplayName>Crster</PublisherDisplayName>
+		<Logo>Assets\StoreLogo.png</Logo>
+	</Properties>
 
-  <Dependencies>
-    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26226.0" />
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26226.0" />
-  </Dependencies>
+	<Dependencies>
+		<TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26226.0" />
+		<TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26226.0" />
+	</Dependencies>
 
-  <Resources>
-    <Resource Language="x-generate"/>
-  </Resources>
+	<Resources>
+		<Resource Language="x-generate"/>
+	</Resources>
 
-  <Applications>
-    <Application Id="App"
-      Executable="$targetnametoken$.exe"
-      EntryPoint="$targetentrypoint$">
-      <uap:VisualElements
-        DisplayName="Evania"
-        Description="Evania"
-        BackgroundColor="transparent"
-        Square150x150Logo="Assets\Square150x150Logo.png"
-        Square44x44Logo="Assets\Square44x44Logo.png">
-        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
-        <uap:SplashScreen Image="Assets\SplashScreen.png" />
-      </uap:VisualElements>
-      <!--
-        Declares the "Start with Windows" switch. A startup task rather than an HKCU Run entry so
-        the toggle lands in Task Manager > Startup apps where users expect to find and override it;
-        AutoStartService enables and disables it by TaskId. The extension lives in the uap5
-        namespace - under plain uap the manifest fails schema validation.
-      -->
-      <Extensions>
-        <uap5:Extension Category="windows.startupTask">
-          <uap5:StartupTask
-              TaskId="EvaniaStartupTask"
-              Enabled="false"
-              DisplayName="Evania" />
-        </uap5:Extension>
-        <uap:Extension Category="windows.protocol">
-          <uap:Protocol Name="evania" />
-        </uap:Extension>
-      </Extensions>
-    </Application>
-  </Applications>
+	<Applications>
+		<Application Id="App"
+		  Executable="$targetnametoken$.exe"
+		  EntryPoint="$targetentrypoint$">
+			<uap:VisualElements
+			  DisplayName="Evania"
+			  Description="Evania"
+			  BackgroundColor="transparent"
+			  Square150x150Logo="Assets\Square150x150Logo.png"
+			  Square44x44Logo="Assets\Square44x44Logo.png">
+				<uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+				<uap:SplashScreen Image="Assets\SplashScreen.png" />
+			</uap:VisualElements>
+			<Extensions>
+				<uap5:Extension Category="windows.startupTask">
+					<uap5:StartupTask
+						TaskId="EvaniaStartupTask"
+						Enabled="false"
+						DisplayName="Evania" />
+				</uap5:Extension>
+				<uap:Extension Category="windows.protocol">
+					<uap:Protocol Name="evania" />
+				</uap:Extension>
+				<uap3:Extension Category="windows.appExtension">
+					<uap3:AppExtension
+						Name="com.microsoft.windows.copilotkeyprovider"
+						Id="EvaniaCopilotKeyProvider"
+						DisplayName="Evania Copilot Key Provider"
+						Description="Provides Copilot key integration for Evania."
+						PublicFolder="Public" />
+				</uap3:Extension>
+			</Extensions>
+		</Application>
+	</Applications>
 
-  <Capabilities>
-    <rescap:Capability Name="runFullTrust" />
-    <rescap:Capability Name="graphicsCaptureProgrammatic" />
-    <rescap:Capability Name="graphicsCaptureWithoutBorder" />
-    <systemai:Capability Name="systemAIModels"/>
-    <DeviceCapability Name="microphone" />
-    <DeviceCapability Name="webcam" />
-  </Capabilities>
+	<Capabilities>
+		<rescap:Capability Name="runFullTrust" />
+		<rescap:Capability Name="graphicsCaptureProgrammatic" />
+		<rescap:Capability Name="graphicsCaptureWithoutBorder" />
+		<DeviceCapability Name="microphone" />
+		<DeviceCapability Name="webcam" />
+	</Capabilities>
 </Package>
+
+

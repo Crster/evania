@@ -117,10 +117,36 @@ public sealed partial class NotePage : Page
 
     private async void Back_Click(object sender, RoutedEventArgs e)
     {
+        ViewModel.UpdateDocument(Editor.Markdown, Editor.PlainText);
         SaveEditorPosition();
         await ViewModel.CloseEditorAsync();
         UpdatePanels();
         await RestoreListPositionAsync();
+    }
+
+    private async void Delete_Click(object sender, RoutedEventArgs e)
+    {
+        ContentDialog dialog = new()
+        {
+            XamlRoot = XamlRoot,
+            Title = "Delete note?",
+            Content = "This will permanently delete the note and its attachments.",
+            PrimaryButtonText = "Delete",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        await ViewModel.DeleteCurrentAsync();
+        if (!ViewModel.IsEditing)
+        {
+            UpdatePanels();
+            await RestoreListPositionAsync();
+        }
     }
 
     private async void NoteList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)

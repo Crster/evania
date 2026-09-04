@@ -57,7 +57,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
     /// </summary>
     public string CurrentMarkdown => currentNote is null
         ? string.Empty
-        : currentNote.Markdown.Length > 0 ? currentNote.Markdown : currentNote.PlainText;
+        : !string.IsNullOrEmpty(currentNote.Markdown) ? currentNote.Markdown : currentNote.PlainText ?? string.Empty;
 
     public double CurrentEditorScrollOffset => currentNote?.EditorScrollOffset ?? 0;
 
@@ -158,6 +158,38 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         currentNote = null;
         Attachments.Clear();
         await ReloadListAsync();
+    }
+
+    public async Task DeleteCurrentAsync()
+    {
+        NoteDocument? note = currentNote;
+        if (note is null)
+        {
+            return;
+        }
+
+        saveDelay?.Cancel();
+        saveDelay?.Dispose();
+        saveDelay = null;
+
+        try
+        {
+            IsSaving = true;
+            await NoteService.DeleteAsync(note);
+            IsEditing = false;
+            currentNote = null;
+            Attachments.Clear();
+            removedAttachmentIds.Clear();
+            await ReloadListAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
     }
 
     public void UpdateDocument(string markdown, string plainText)

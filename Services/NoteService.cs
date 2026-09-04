@@ -19,9 +19,13 @@ public static class NoteService
 
             if (normalizedFilter.Length > 0)
             {
+                string[] filterTerms = normalizedFilter.Split(
+                    (char[]?)null,
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
                 query = query.Where(note =>
-                    (note.Title ?? string.Empty).Contains(normalizedFilter, StringComparison.CurrentCultureIgnoreCase) ||
-                    (note.PlainText ?? string.Empty).Contains(normalizedFilter, StringComparison.CurrentCultureIgnoreCase));
+                    MatchesWordPrefixes(note.Title, filterTerms) ||
+                    MatchesWordPrefixes(note.PlainText, filterTerms));
             }
 
             query = sortOrder switch
@@ -50,7 +54,7 @@ public static class NoteService
             MarkdownEditorLog.Viewport($"database note={note.Id}, offset={stored?.EditorScrollOffset:F1}, height={stored?.EditorViewportHeight:F1}, source={stored?.EditorViewportSourcePosition}, anchorOffset={stored?.EditorViewportAnchorOffset:F1}");
         });
 
-    public static Task<NoteDocument?> GetAsync(ObjectId id) => Task.Run(() => DatabaseService.GetNote(id));
+    public static Task<NoteDocument?> GetAsync(ObjectId id) => Task.Run(() => Normalize(DatabaseService.GetNote(id)));
 
     public static Task SaveAsync(NoteDocument note, IReadOnlyCollection<string>? removedAttachmentIds = null) =>
         Task.Run(() =>
@@ -140,6 +144,21 @@ public static class NoteService
     public static string CreateListStateKey(string filter, NoteSortOrder sortOrder) =>
         $"{sortOrder}:{filter.Trim().ToUpperInvariant()}";
 
+    private static bool MatchesWordPrefixes(string? text, IReadOnlyList<string> filterTerms)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        string[] words = text.Split(
+            (char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return filterTerms.All(term => words.Any(word =>
+            word.StartsWith(term, StringComparison.CurrentCultureIgnoreCase)));
+    }
+
     public static Task<double> GetListScrollOffsetAsync(string stateKey) =>
         Task.Run(() => DatabaseService.GetNoteListScrollOffset(stateKey));
 
@@ -156,5 +175,20 @@ public static class NoteService
             plainText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         return preview.Length <= 180 ? preview : $"{preview[..177]}...";
+    }
+
+    private static NoteDocument? Normalize(NoteDocument? note)
+    {
+        if (note is null)
+        {
+            return null;
+        }
+
+        note.Title ??= string.Empty;
+        note.Markdown ??= string.Empty;
+        note.PlainText ??= string.Empty;
+        note.Attachments ??= new List<NoteAttachment>();
+
+        return note;
     }
 }

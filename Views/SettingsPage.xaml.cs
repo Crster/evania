@@ -1,10 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Evania.Services;
 using Evania.ViewModels;
+using Evania.Windows;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
+using Microsoft.UI.Xaml.Media;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 
@@ -19,6 +25,32 @@ namespace Evania.Views;
 public sealed partial class SettingsPage : Page
 {
     public SettingsPageViewModel ViewModel { get; } = new();
+
+    private readonly string[] settingLabelNames =
+    [
+        // Section headers
+        "DatabaseHeader",
+        "GeneralHeader",
+        "ScreenshotHeader",
+
+        // Setting titles
+        "PathTitle",
+        "PasswordTitle",
+        "StartWithWindowsTitle",
+        "CloseToTrayTitle",
+        "ShortcutTitle",
+        "AutoSaveTitle",
+
+        // Subtitles
+        "PathSubtitle",
+        "PasswordSubtitle",
+        "StartWithWindowsSubtitle",
+        "CloseToTraySubtitle",
+        "ShortcutSubtitle",
+        "AutoSaveSubtitle"
+    ];
+
+    private TextBlock[] settingLabels = [];
 
     /// <summary>
     /// False until the page has finished loading. A <see cref="ToggleSwitch"/> raises
@@ -40,8 +72,56 @@ public sealed partial class SettingsPage : Page
         SyncSwitchesToSettings();
         ViewModel.RefreshStatus();
 
+        settingLabels = settingLabelNames.Select(n => (TextBlock)FindName(n)).ToArray();
+
+        if (App.MainWindow is MainWindow mainWindow)
+        {
+            mainWindow.TitleBarSearchChanged += OnTitleBarSearchChanged;
+            ApplySearchHighlight(mainWindow.TitleBarSearchText);
+        }
+
         loaded = true;
     }
+
+    private void SettingsPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        if (App.MainWindow is MainWindow mainWindow)
+        {
+            mainWindow.TitleBarSearchChanged -= OnTitleBarSearchChanged;
+        }
+    }
+
+    private static readonly SolidColorBrush HighlightBackground = new(Colors.DodgerBlue);
+
+        private void OnTitleBarSearchChanged(object? sender, string text)
+        {
+            ApplySearchHighlight(text);
+        }
+
+        private void ApplySearchHighlight(string text)
+        {
+            foreach (TextBlock label in settingLabels)
+            {
+                label.TextHighlighters.Clear();
+
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    int index = label.Text.IndexOf(text, StringComparison.OrdinalIgnoreCase);
+
+                    if (index >= 0)
+                    {
+                        var range = new TextRange { StartIndex = index, Length = text.Length };
+                        var highlighter = new TextHighlighter
+                        {
+                            Background = HighlightBackground,
+                            Ranges = { range }
+                        };
+
+                        label.TextHighlighters.Add(highlighter);
+                    }
+                }
+            }
+        }
 
     /// <summary>
     /// Copies the live settings into the input controls that cannot be safely two-way bound to a

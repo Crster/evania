@@ -10,13 +10,14 @@
     xmlns:converters="using:Evania.Converters"
     mc:Ignorable="d"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-    Loaded="ScreenRecordPage_Loaded">
+    Loaded="ScreenRecordPage_Loaded"
+    Unloaded="ScreenRecordPage_Unloaded">
 
     <Page.Resources>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
     </Page.Resources>
 
-    <Grid Padding="16">
+    <Grid Padding="16,20,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -33,7 +34,7 @@
             IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
             Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
             Closed="ErrorBar_Closed"
-            Margin="0,0,0,12" />
+            Margin="0,0,0,0" />
 
         <!-- Top-center "Record Screen" button -->
         <Button
@@ -43,7 +44,7 @@
             Style="{StaticResource AccentButtonStyle}"
             Padding="20,10"
             HorizontalAlignment="Center"
-            Margin="0,0,0,16">
+            Margin="0,12,0,16">
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Ellipse
                     Width="14"
@@ -91,7 +92,7 @@
             Grid.Row="3"
             Height="150"
             Margin="0,8,0,0"
-            ItemsSource="{x:Bind ViewModel.Recordings}"
+            ItemsSource="{x:Bind ViewModel.FilteredRecordings}"
             SelectedItem="{x:Bind ViewModel.SelectedRecording, Mode=TwoWay}"
             SelectionMode="Single"
             ScrollViewer.HorizontalScrollMode="Enabled"

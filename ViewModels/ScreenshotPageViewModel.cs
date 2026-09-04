@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Drawing;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -16,6 +18,8 @@ namespace Evania.ViewModels
     {
         public ObservableCollection<ScreenshotItem> Screenshots { get; } = new();
 
+        public ObservableCollection<ScreenshotItem> FilteredScreenshots { get; } = new();
+
         [ObservableProperty]
         public partial bool IsBusy { get; set; }
 
@@ -27,6 +31,11 @@ namespace Evania.ViewModels
 
         [ObservableProperty]
         public partial string LastSavedPath { get; set; } = string.Empty;
+
+        [ObservableProperty]
+        private string filter = string.Empty;
+
+        partial void OnFilterChanged(string value) => ApplyFilter();
 
         public ScreenshotPageViewModel()
         {
@@ -62,6 +71,7 @@ namespace Evania.ViewModels
                 : new ScreenshotItem(message.Image, sourcePath: message.SavedPath);
 
             Screenshots.Insert(0, item);
+            ApplyFilter();
 
             if (message.SavedPath is { } savedPath)
             {
@@ -167,8 +177,22 @@ namespace Evania.ViewModels
                 Screenshots.Add(new ScreenshotItem(image, sourcePath: file.Path));
             }
 
+            ApplyFilter();
+
             HasScreenshots = Screenshots.Count > 0;
             IsEmpty = !HasScreenshots;
+        }
+
+        private void ApplyFilter()
+        {
+            FilteredScreenshots.Clear();
+
+            foreach (ScreenshotItem item in Screenshots.Where(item =>
+                         item.SourcePath is null ||
+                         Path.GetFileName(item.SourcePath).Contains(Filter, StringComparison.OrdinalIgnoreCase)))
+            {
+                FilteredScreenshots.Add(item);
+            }
         }
     }
 }

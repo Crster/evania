@@ -182,7 +182,7 @@
             IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
             Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
             Closed="ErrorBar_Closed"
-            Margin="0,0,0,16" />
+            Margin="0,0,0,0" />
 
         <Grid
             Grid.Row="2"
@@ -382,7 +382,7 @@
                 Orientation="Horizontal"
                 Spacing="8"
                 HorizontalAlignment="Center"
-                Margin="0,0,0,16">
+                Margin="0,12,0,16">
                 <Button
                     Style="{StaticResource AccentButtonStyle}"
                     Click="New_Click"

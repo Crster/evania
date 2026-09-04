@@ -144,6 +144,41 @@ public static class NoteService
     public static string CreateListStateKey(string filter, NoteSortOrder sortOrder) =>
         $"{sortOrder}:{filter.Trim().ToUpperInvariant()}";
 
+    public static IEnumerable<(int Start, int Length)> FindWordPrefixMatchRanges(string? text, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(filter))
+        {
+            yield break;
+        }
+
+        string[] filterTerms = filter.Trim().Split(
+            (char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (string term in filterTerms)
+        {
+            int textIndex = 0;
+            while (textIndex < text.Length)
+            {
+                while (textIndex < text.Length && char.IsWhiteSpace(text[textIndex]))
+                {
+                    textIndex++;
+                }
+
+                int wordStart = textIndex;
+                while (textIndex < text.Length && !char.IsWhiteSpace(text[textIndex]))
+                {
+                    textIndex++;
+                }
+
+                if (textIndex > wordStart && text.AsSpan(wordStart, textIndex - wordStart).StartsWith(term, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    yield return (wordStart, term.Length);
+                }
+            }
+        }
+    }
+
     private static bool MatchesWordPrefixes(string? text, IReadOnlyList<string> filterTerms)
     {
         if (string.IsNullOrWhiteSpace(text))

@@ -18,6 +18,8 @@ namespace Evania.ViewModels
     {
         public ObservableCollection<RecordingItem> Recordings { get; } = new();
 
+        public ObservableCollection<RecordingItem> FilteredRecordings { get; } = new();
+
         /// <summary>Owned by the page's <c>MediaPlayerElement</c>; the source follows the selection.</summary>
         public MediaPlayer Player { get; } = new();
 
@@ -32,6 +34,9 @@ namespace Evania.ViewModels
 
         [ObservableProperty]
         public partial RecordingItem? SelectedRecording { get; set; }
+
+        [ObservableProperty]
+        private string filter = string.Empty;
 
         public bool CanRecord => !IsRecording;
 
@@ -52,6 +57,8 @@ namespace Evania.ViewModels
             OnPropertyChanged(nameof(HasNoSelection));
         }
 
+        partial void OnFilterChanged(string value) => ApplyFilter();
+
         [RelayCommand]
         private async Task LoadRecordingsAsync()
         {
@@ -68,6 +75,8 @@ namespace Evania.ViewModels
             {
                 Recordings.Add(item);
             }
+
+            ApplyFilter();
 
             IsEmpty = Recordings.Count == 0;
 
@@ -172,5 +181,21 @@ namespace Evania.ViewModels
 
         private RecordingItem? FindRecording(string path) =>
             Recordings.FirstOrDefault(r => string.Equals(r.Path, path, StringComparison.OrdinalIgnoreCase));
+
+        private void ApplyFilter()
+        {
+            FilteredRecordings.Clear();
+
+            foreach (RecordingItem item in Recordings.Where(item =>
+                         item.Name.Contains(Filter, StringComparison.OrdinalIgnoreCase)))
+            {
+                FilteredRecordings.Add(item);
+            }
+
+            if (SelectedRecording is not null && !FilteredRecordings.Contains(SelectedRecording))
+            {
+                SelectedRecording = null;
+            }
+        }
     }
 }

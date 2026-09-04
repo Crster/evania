@@ -11,7 +11,8 @@
     mc:Ignorable="d"
     d:DataContext="{d:DesignInstance Type=vm:SettingsPageViewModel}"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-    Loaded="SettingsPage_Loaded">
+    Loaded="SettingsPage_Loaded"
+    Unloaded="SettingsPage_Unloaded">
 
     <Page.Resources>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
@@ -71,7 +72,7 @@
         </Style>
     </Page.Resources>
 
-    <ScrollViewer Padding="40,28,40,48" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
+    <ScrollViewer Padding="40,20,40,48" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
         <StackPanel MaxWidth="880" HorizontalAlignment="Left">
 
             <!-- Error notification bar -->
@@ -85,15 +86,16 @@
 
             <!-- ==================== Database ==================== -->
 
-            <TextBlock Text="Database" Style="{StaticResource SectionHeader}" />
+            <TextBlock x:Name="DatabaseHeader" Text="Database" Style="{StaticResource SectionHeader}" />
 
             <Border Style="{StaticResource SectionCard}">
                 <StackPanel Spacing="14">
 
                     <!-- Path row - takes full card width -->
                     <StackPanel>
-                        <TextBlock Text="Path" Style="{StaticResource SettingTitle}" />
+                        <TextBlock x:Name="PathTitle" Text="Path" Style="{StaticResource SettingTitle}" />
                         <TextBlock
+                            x:Name="PathSubtitle"
                             Text="Full path and file name of the LiteDB database."
                             Style="{StaticResource SettingSubtitle}" />
 
@@ -128,8 +130,9 @@
 
                     <!-- Password row -->
                     <StackPanel>
-                        <TextBlock Text="Password" Style="{StaticResource SettingTitle}" />
+                        <TextBlock x:Name="PasswordTitle" Text="Password" Style="{StaticResource SettingTitle}" />
                         <TextBlock
+                            x:Name="PasswordSubtitle"
                             Text="Encrypts the database. Leave empty for no encryption."
                             Style="{StaticResource SettingSubtitle}" />
 
@@ -163,15 +166,16 @@
 
             <!-- ==================== General ==================== -->
 
-            <TextBlock Text="General" Style="{StaticResource SectionHeader}" />
+            <TextBlock x:Name="GeneralHeader" Text="General" Style="{StaticResource SectionHeader}" />
 
             <Border Style="{StaticResource SectionCard}">
                 <StackPanel Spacing="0">
 
                     <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Start with Windows" Style="{StaticResource SettingTitle}" />
+                            <TextBlock x:Name="StartWithWindowsTitle" Text="Start with Windows" Style="{StaticResource SettingTitle}" />
                             <TextBlock
+                                x:Name="StartWithWindowsSubtitle"
                                 Text="Launch Evania when you sign in. Windows lists it under Task Manager - Startup apps, where it can also be turned off."
                                 Style="{StaticResource SettingSubtitle}" />
                         </StackPanel>
@@ -190,8 +194,9 @@
 
                     <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Close to system tray" Style="{StaticResource SettingTitle}" />
+                            <TextBlock x:Name="CloseToTrayTitle" Text="Close to system tray" Style="{StaticResource SettingTitle}" />
                             <TextBlock
+                                x:Name="CloseToTraySubtitle"
                                 Text="The close button hides Evania instead of ending it, leaving its icon in the tray: double-click to come back, or use Exit Evania in its menu to really quit."
                                 Style="{StaticResource SettingSubtitle}" />
                         </StackPanel>
@@ -224,15 +229,16 @@
 
             <!-- ==================== Screenshot ==================== -->
 
-            <TextBlock Text="Screenshot" Style="{StaticResource SectionHeader}" />
+            <TextBlock x:Name="ScreenshotHeader" Text="Screenshot" Style="{StaticResource SectionHeader}" />
 
             <Border Style="{StaticResource SectionCard}">
                 <StackPanel Spacing="0">
 
                     <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Shortcut" Style="{StaticResource SettingTitle}" />
+                            <TextBlock x:Name="ShortcutTitle" Text="Shortcut" Style="{StaticResource SettingTitle}" />
                             <TextBlock
+                                x:Name="ShortcutSubtitle"
                                 Text="Takes a screenshot from anywhere in Windows. Whichever key is picked belongs to Evania while it runs."
                                 Style="{StaticResource SettingSubtitle}" />
                         </StackPanel>
@@ -251,8 +257,9 @@
 
                     <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Auto-save" Style="{StaticResource SettingTitle}" />
+                            <TextBlock x:Name="AutoSaveTitle" Text="Auto-save" Style="{StaticResource SettingTitle}" />
                             <TextBlock
+                                x:Name="AutoSaveSubtitle"
                                 Text="{x:Bind ViewModel.AutoSaveSubtitle, Mode=OneWay}"
                                 Style="{StaticResource SettingSubtitle}" />
                         </StackPanel>

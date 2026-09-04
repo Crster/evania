@@ -18,6 +18,22 @@ public sealed partial class ScreenshotPage : Page
     private async void ScreenshotPage_Loaded(object sender, RoutedEventArgs e)
     {
         await ViewModel.LoadScreenshotsCommand.ExecuteAsync(null);
+
+        if (App.MainWindow is Evania.Windows.MainWindow mainWindow)
+        {
+            mainWindow.TitleBarSearchChanged += MainWindow_TitleBarSearchChanged;
+            ViewModel.Filter = mainWindow.TitleBarSearchText;
+        }
+    }
+
+    private void MainWindow_TitleBarSearchChanged(object? sender, string text) => ViewModel.Filter = text;
+
+    private void ScreenshotPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        if (App.MainWindow is Evania.Windows.MainWindow mainWindow)
+        {
+            mainWindow.TitleBarSearchChanged -= MainWindow_TitleBarSearchChanged;
+        }
     }
 
     private void Grid_PointerEntered(object sender, PointerRoutedEventArgs e)

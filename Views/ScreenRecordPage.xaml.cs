@@ -20,6 +20,22 @@ public sealed partial class ScreenRecordPage : Page
     private async void ScreenRecordPage_Loaded(object sender, RoutedEventArgs e)
     {
         await ViewModel.LoadRecordingsCommand.ExecuteAsync(null);
+
+        if (App.MainWindow is Evania.Windows.MainWindow mainWindow)
+        {
+            mainWindow.TitleBarSearchChanged += MainWindow_TitleBarSearchChanged;
+            ViewModel.Filter = mainWindow.TitleBarSearchText;
+        }
+    }
+
+    private void MainWindow_TitleBarSearchChanged(object? sender, string text) => ViewModel.Filter = text;
+
+    private void ScreenRecordPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        if (App.MainWindow is Evania.Windows.MainWindow mainWindow)
+        {
+            mainWindow.TitleBarSearchChanged -= MainWindow_TitleBarSearchChanged;
+        }
     }
 
     private void ErrorBar_Closed(InfoBar sender, object args)

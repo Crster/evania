@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
+using Evania.Services;
 using Colors = Microsoft.UI.Colors;
 
 namespace Evania.Controls.MarkdownEditor;
@@ -156,6 +157,19 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         set => SetValue(MarkdownProperty, value);
     }
 
+    public static readonly DependencyProperty SearchQueryProperty = DependencyProperty.Register(
+        nameof(SearchQuery),
+        typeof(string),
+        typeof(MarkdownEditor),
+        new PropertyMetadata(string.Empty, OnSearchQueryPropertyChanged));
+
+    /// <summary>Text from the app-wide search box to highlight in the rendered document.</summary>
+    public string SearchQuery
+    {
+        get => (string)GetValue(SearchQueryProperty);
+        set => SetValue(SearchQueryProperty, value);
+    }
+
     public static readonly DependencyProperty IsReadOnlyProperty = DependencyProperty.Register(
         nameof(IsReadOnly),
         typeof(bool),
@@ -269,6 +283,11 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         editor.selection = TextRange.Caret(0);
         editor.engine.Invalidate();
         editor.UpdateEditorLayout();
+    }
+
+    private static void OnSearchQueryPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        ((MarkdownEditor)d).canvas.Invalidate();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -459,6 +478,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             BlockRenderers.DrawDecoration(session, theme, block, Math.Max(80f, contentWidth - 8f));
             DrawSelection(session, block);
             BlockRenderers.DrawInlineBackgrounds(session, theme, block);
+            DrawSearchHighlights(session, block);
             DrawBlockText(session, block);
         }
 
@@ -475,6 +495,41 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         foreach (TableCellLayout cell in block.Cells)
         {
             session.DrawTextLayout(cell.Region.Layout, cell.Region.Origin.X, block.Y + cell.Region.Origin.Y, theme.Foreground);
+        }
+    }
+
+    private void DrawSearchHighlights(CanvasDrawingSession session, BlockLayout block)
+    {
+        if (string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            return;
+        }
+
+        if (block.Text is not null)
+        {
+            DrawSearchHighlightsForRegion(session, block.Text, block.Y);
+        }
+
+        foreach (TableCellLayout cell in block.Cells)
+        {
+            DrawSearchHighlightsForRegion(session, cell.Region, block.Y);
+        }
+    }
+
+    private void DrawSearchHighlightsForRegion(CanvasDrawingSession session, TextRegion region, float yOffset)
+    {
+        foreach ((int start, int length) in NoteService.FindWordPrefixMatchRanges(region.RenderedText, SearchQuery))
+        {
+            foreach (CanvasTextLayoutRegion characterRegion in region.Layout.GetCharacterRegions(start, length))
+            {
+                global::Windows.Foundation.Rect bounds = characterRegion.LayoutBounds;
+                session.FillRectangle(
+                    (float)bounds.X + region.Origin.X,
+                    (float)bounds.Y + region.Origin.Y + yOffset,
+                    (float)bounds.Width,
+                    (float)bounds.Height,
+                    WithAlpha(GetThemeColor("AccentFillColorDefault", theme.SelectionFill), 0x35));
+            }
         }
     }
 

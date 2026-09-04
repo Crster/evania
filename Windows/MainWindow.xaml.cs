@@ -58,6 +58,8 @@ public sealed partial class MainWindow : Window
     /// </summary>
     public event EventHandler<string>? TitleBarSearchChanged;
 
+    public string TitleBarSearchText => TitleBarSearchBox.Text;
+
     private void TitleBarSearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         TitleBarSearchChanged?.Invoke(this, sender.Text);
@@ -116,6 +118,7 @@ public sealed partial class MainWindow : Window
         // The footer gear arrives through this event too, flagged rather than as a menu item.
         if (args.IsSettingsSelected)
         {
+            TitleBarSearchBox.PlaceholderText = "Search settings";
             Navigate(typeof(SettingsPage));
 
             return;
@@ -135,6 +138,13 @@ public sealed partial class MainWindow : Window
 
         if (pageType != null)
         {
+            TitleBarSearchBox.PlaceholderText = item!.Content switch
+            {
+                "Screenshot" => "Search screenshots",
+                "Screen Record" => "Search recordings",
+                "Notes" => "Search notes",
+                _ => "Search"
+            };
             Navigate(pageType);
         }
     }

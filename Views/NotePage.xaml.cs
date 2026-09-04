@@ -78,11 +78,14 @@ public sealed partial class NotePage : Page
         if (App.MainWindow is Evania.Windows.MainWindow mainWindow)
         {
             mainWindow.TitleBarSearchChanged += MainWindow_TitleBarSearchChanged;
+            Editor.SearchQuery = mainWindow.TitleBarSearchText;
         }
     }
 
     private void MainWindow_TitleBarSearchChanged(object? sender, string text)
     {
+        Editor.SearchQuery = text;
+
         if (!ViewModel.IsEditing)
         {
             ViewModel.Filter = text;

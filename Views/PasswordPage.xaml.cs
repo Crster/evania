@@ -6,9 +6,12 @@ using Evania.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
+using ZXing;
+using ZXing.Common;
 
 namespace Evania.Views;
 
@@ -202,6 +205,150 @@ public sealed partial class PasswordPage : Page
 
     private void EditorCopyTotp_Click(object sender, RoutedEventArgs e) =>
         CopyToClipboard(ViewModel.EditTotpCode);
+
+    private async void ScanTotpQr_Click(object sender, RoutedEventArgs e)
+    {
+        CameraPreview camera = new();
+        Image preview = new()
+        {
+            Height = 280,
+            Stretch = Stretch.Uniform,
+        };
+        TextBlock status = new()
+        {
+            Text = "Starting camera...",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.7,
+        };
+        ContentDialog dialog = new()
+        {
+            XamlRoot = XamlRoot,
+            Title = "Scan authenticator QR code",
+            PrimaryButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                MinWidth = 420,
+                Children =
+                {
+                    preview,
+                    new TextBlock
+                    {
+                        Text = "Hold the authenticator QR code steady in front of the webcam.",
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    status,
+                },
+            },
+        };
+
+        BarcodeReaderGeneric reader = new()
+        {
+            AutoRotate = true,
+            Options = new DecodingOptions
+            {
+                PossibleFormats = [BarcodeFormat.QR_CODE],
+                TryHarder = true,
+            },
+        };
+        int isDecoding = 0;
+        int decodeAttemptCount = 0;
+        int scanStatusShown = 0;
+        bool codeApplied = false;
+
+        System.Diagnostics.Debug.WriteLine("TOTP QR scanner: opening scanner dialog.");
+        camera.BitmapChanged += () => preview.Source = camera.Bitmap;
+        camera.FrameReceived += (pixels, width, height) =>
+        {
+            if (System.Threading.Interlocked.Exchange(ref isDecoding, 1) == 1)
+            {
+                return;
+            }
+
+            try
+            {
+                int attempt = System.Threading.Interlocked.Increment(ref decodeAttemptCount);
+                if (attempt == 1 && System.Threading.Interlocked.Exchange(ref scanStatusShown, 1) == 0)
+                {
+                    DispatcherQueue.TryEnqueue(() => status.Text = "Camera ready. Looking for a QR code...");
+                }
+
+                if (attempt == 1 || attempt % 30 == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"TOTP QR scanner: decode attempt {attempt} ({width}x{height}).");
+                }
+
+                Result? result = reader.Decode(new RGBLuminanceSource(
+                    pixels,
+                    width,
+                    height,
+                    RGBLuminanceSource.BitmapFormat.BGRA32));
+                if (result?.Text is not { } text)
+                {
+                    return;
+                }
+
+                bool isValidTotp = TotpService.TryParseSecret(text, out _, out _, out _);
+                bool isOtpAuthUri = text.StartsWith("otpauth://", StringComparison.OrdinalIgnoreCase);
+                System.Diagnostics.Debug.WriteLine($"TOTP QR scanner: QR decoded (length {text.Length}); valid TOTP: {isValidTotp}; direct otpauth URI: {isOtpAuthUri}.");
+
+                if (isValidTotp)
+                {
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (codeApplied)
+                        {
+                            return;
+                        }
+
+                        codeApplied = true;
+                        ViewModel.EditTotpSecret = text;
+                        status.Text = "Authenticator QR code detected.";
+                        System.Diagnostics.Debug.WriteLine(isOtpAuthUri
+                            ? "TOTP QR scanner: valid otpauth configuration applied."
+                            : "TOTP QR scanner: valid Base32 configuration applied.");
+                        dialog.Hide();
+                    });
+                }
+                else
+                {
+                    DispatcherQueue.TryEnqueue(() =>
+                        status.Text = "QR code found, but it is not a valid TOTP setup code. Try another code.");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"QR scan failed: {ex.Message}");
+            }
+            finally
+            {
+                System.Threading.Interlocked.Exchange(ref isDecoding, 0);
+            }
+        };
+
+        try
+        {
+            string? cameraError = await camera.StartAsync();
+            if (cameraError is not null)
+            {
+                status.Text = cameraError;
+                System.Diagnostics.Debug.WriteLine($"TOTP QR scanner: camera unavailable: {cameraError}");
+            }
+            else
+            {
+                status.Text = "Camera ready. Looking for a QR code...";
+            }
+
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            System.Diagnostics.Debug.WriteLine($"TOTP QR scanner: closing after {decodeAttemptCount} decode attempts.");
+            await camera.StopAsync();
+            camera.Dispose();
+        }
+    }
 
     // --- card quick actions ------------------------------------------------------------------------
 

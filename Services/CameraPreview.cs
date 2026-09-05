@@ -8,6 +8,7 @@ using Windows.Graphics.Imaging;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
 using Windows.Media.MediaProperties;
+using Windows.Storage.Streams;
 
 namespace Evania.Services
 {
@@ -33,12 +34,16 @@ namespace Evania.Services
         // thread that owns the XAML tree — creating one off that thread is RPC_E_WRONG_THREAD.
         private readonly DispatcherQueue? _queue = DispatcherQueue.GetForCurrentThread();
         private int _frameInFlight;
+        private int _frameCount;
 
         /// <summary>The camera image to display, or null until the first frame arrives.</summary>
         public WriteableBitmap? Bitmap { get; private set; }
 
         /// <summary>Raised when the frame size changed and <see cref="Bitmap"/> is a new object.</summary>
         public event Action? BitmapChanged;
+
+        /// <summary>Raised with a copied BGRA frame on the camera reader thread.</summary>
+        public event Action<byte[], int, int>? FrameReceived;
 
         public bool IsRunning => _reader is not null;
 
@@ -72,6 +77,7 @@ namespace Evania.Services
                     MemoryPreference = MediaCaptureMemoryPreference.Cpu,
                 };
                 await capture.InitializeAsync(settings);
+                System.Diagnostics.Debug.WriteLine("CameraPreview: camera initialized.");
 
                 MediaFrameSource? source =
                     capture.FrameSources.Values.FirstOrDefault(s => s.Info.SourceKind == MediaFrameSourceKind.Color) ??
@@ -86,6 +92,7 @@ namespace Evania.Services
                 reader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
                 reader.FrameArrived += Reader_FrameArrived;
                 await reader.StartAsync();
+                System.Diagnostics.Debug.WriteLine("CameraPreview: frame reader started.");
             }
             catch (Exception ex)
             {
@@ -95,11 +102,13 @@ namespace Evania.Services
                     reader.Dispose();
                 }
                 capture.Dispose();
+                System.Diagnostics.Debug.WriteLine($"CameraPreview: startup failed: {ex.Message}");
                 return ex.Message;
             }
 
             _capture = capture;
             _reader = reader;
+            _frameCount = 0;
             return null;
         }
 
@@ -122,6 +131,7 @@ namespace Evania.Services
             }
 
             capture?.Dispose();
+            System.Diagnostics.Debug.WriteLine("CameraPreview: camera stopped.");
         }
 
         private void Reader_FrameArrived(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
@@ -140,6 +150,34 @@ namespace Evania.Services
             if (bitmap is null)
             {
                 return;
+            }
+
+            int frameCount = Interlocked.Increment(ref _frameCount);
+            if (frameCount == 1 || frameCount % 60 == 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"CameraPreview: frame {frameCount} received ({bitmap.PixelWidth}x{bitmap.PixelHeight}).");
+            }
+
+            try
+            {
+                if (FrameReceived is not null)
+                {
+                    byte[] pixels = new byte[checked(bitmap.PixelWidth * bitmap.PixelHeight * 4)];
+                    global::Windows.Storage.Streams.Buffer buffer = new((uint)pixels.Length);
+                    bitmap.CopyToBuffer(buffer);
+                    using DataReader dataReader = DataReader.FromBuffer(buffer);
+                    dataReader.ReadBytes(pixels);
+                    FrameReceived(pixels, bitmap.PixelWidth, bitmap.PixelHeight);
+
+                    if (frameCount == 1 || frameCount % 60 == 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"CameraPreview: frame {frameCount} delivered to scanner.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Camera frame handler failed: {ex.Message}");
             }
 
             DispatcherQueue? queue = _queue;

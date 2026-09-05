@@ -23,6 +23,10 @@ public sealed partial class PasswordPage : Page
     /// </summary>
     private DispatcherTimer? totpTimer;
 
+    /// <summary>Starts masked, and re-masked every time the editor opens so a previous session's
+    /// reveal choice never leaks into a different entry.</summary>
+    private bool passwordMasked = true;
+
     public PasswordPageViewModel ViewModel { get; } = new();
 
     public PasswordPage()
@@ -76,7 +80,19 @@ public sealed partial class PasswordPage : Page
     {
         if (e.PropertyName == nameof(PasswordPageViewModel.IsEditing))
         {
+            // New and Open both raise IsEditing just after filling the edit fields, so the mask
+            // reset always reflects the entry being shown, never the previous one.
+            if (ViewModel.IsEditing)
+            {
+                passwordMasked = true;
+                ApplyPasswordMask();
+            }
+
             UpdatePanels();
+        }
+        else if (e.PropertyName == nameof(PasswordPageViewModel.EditPassword) && passwordMasked)
+        {
+            PasswordInputMasked.Text = Mask(ViewModel.EditPassword);
         }
     }
 
@@ -202,6 +218,28 @@ public sealed partial class PasswordPage : Page
 
     private void EditorCopyPassword_Click(object sender, RoutedEventArgs e) =>
         CopyToClipboard(ViewModel.EditPassword);
+
+    private void TogglePassword_Click(object sender, RoutedEventArgs e)
+    {
+        passwordMasked = !passwordMasked;
+        ApplyPasswordMask();
+    }
+
+    /// <summary>
+    /// Swaps the multiline password input for its read-only bullet stand-in and flips the eye icon.
+    /// The real TextBox is never rewritten, so masking cannot corrupt the bound value.
+    /// </summary>
+    private void ApplyPasswordMask()
+    {
+        PasswordInput.Visibility = passwordMasked ? Visibility.Collapsed : Visibility.Visible;
+        PasswordInputMasked.Visibility = passwordMasked ? Visibility.Visible : Visibility.Collapsed;
+        PasswordInputMasked.Text = passwordMasked ? Mask(ViewModel.EditPassword) : string.Empty;
+
+        TogglePasswordIcon.Glyph = passwordMasked ? "\uE7B3" : "\uED1A";
+        ToolTipService.SetToolTip(TogglePasswordButton, passwordMasked ? "Show password" : "Hide password");
+    }
+
+    private static string Mask(string value) => new('●', value.Length);
 
     private void EditorCopyTotp_Click(object sender, RoutedEventArgs e) =>
         CopyToClipboard(ViewModel.EditTotpCode);

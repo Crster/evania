@@ -216,6 +216,50 @@ public static class DatabaseService
         }
     }
 
+    public static IReadOnlyList<PasswordDocument> GetPasswords()
+    {
+        lock (Gate)
+        {
+            LiteDatabase database = RequireEngine();
+            ILiteCollection<PasswordDocument> passwords = database.GetCollection<PasswordDocument>("passwords");
+            passwords.EnsureIndex(entry => entry.UpdatedAt);
+
+            return passwords.FindAll().ToList();
+        }
+    }
+
+    public static PasswordDocument? GetPassword(ObjectId id)
+    {
+        lock (Gate)
+        {
+            return RequireEngine().GetCollection<PasswordDocument>("passwords").FindById(id);
+        }
+    }
+
+    public static void UpsertPassword(PasswordDocument entry)
+    {
+        lock (Gate)
+        {
+            RequireEngine().GetCollection<PasswordDocument>("passwords").Upsert(entry);
+        }
+    }
+
+    public static void UpsertPasswords(IReadOnlyList<PasswordDocument> entries)
+    {
+        lock (Gate)
+        {
+            RequireEngine().GetCollection<PasswordDocument>("passwords").Upsert(entries);
+        }
+    }
+
+    public static bool DeletePassword(ObjectId id)
+    {
+        lock (Gate)
+        {
+            return RequireEngine().GetCollection<PasswordDocument>("passwords").Delete(id);
+        }
+    }
+
     /// <summary>
     /// Makes the data file match the requested path and encryption state: relocate it, then rebuild
     /// under the target password if that differs from what the file actually answers to.

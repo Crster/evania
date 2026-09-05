@@ -50,6 +50,12 @@ namespace Evania.ViewModels
                     Content = "Notes",
                     Tag = "NotePage",
                     IconGlyph = "\uE70B"
+                },
+                new NavigationItemViewModel
+                {
+                    Content = "Passwords",
+                    Tag = "PasswordPage",
+                    IconGlyph = "\uE72E"
                 }
             };
         }

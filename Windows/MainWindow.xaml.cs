@@ -150,6 +150,7 @@ public sealed partial class MainWindow : Window
             nameof(ScreenshotPage) => typeof(ScreenshotPage),
             nameof(ScreenRecordPage) => typeof(ScreenRecordPage),
             nameof(NotePage) => typeof(NotePage),
+            nameof(PasswordPage) => typeof(PasswordPage),
             _ => null
         };
 
@@ -160,6 +161,7 @@ public sealed partial class MainWindow : Window
                 "Screenshot" => "Search screenshots",
                 "Screen Record" => "Search recordings",
                 "Notes" => "Search notes",
+                "Passwords" => "Search passwords",
                 _ => "Search"
             };
             Navigate(pageType);

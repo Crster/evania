@@ -33,7 +33,7 @@ namespace Evania.ViewModels
         public partial string LastSavedPath { get; set; } = string.Empty;
 
         [ObservableProperty]
-        private string filter = string.Empty;
+        public partial string Filter { get; set; } = string.Empty;
 
         partial void OnFilterChanged(string value) => ApplyFilter();
 

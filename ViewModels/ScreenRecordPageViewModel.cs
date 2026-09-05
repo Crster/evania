@@ -36,7 +36,7 @@ namespace Evania.ViewModels
         public partial RecordingItem? SelectedRecording { get; set; }
 
         [ObservableProperty]
-        private string filter = string.Empty;
+        public partial string Filter { get; set; } = string.Empty;
 
         public bool CanRecord => !IsRecording;
 

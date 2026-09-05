@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -490,7 +491,7 @@ namespace Evania.ViewModels
             return url;
         }
 
-        private static bool TryNormalizeBookmarkUrl(string value, out string? normalizedUrl)
+        private static bool TryNormalizeBookmarkUrl(string value, [NotNullWhen(true)] out string? normalizedUrl)
         {
             normalizedUrl = null;
 

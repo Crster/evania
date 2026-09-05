@@ -21,7 +21,7 @@ public static class EvaniaMascot
     {
         public int W;
         public int H;
-        public byte[] Gray;      // luma, 0..255
+        public byte[] Gray = Array.Empty<byte>();      // luma, 0..255
     }
 
     public static Art Load(string path)
@@ -371,10 +371,8 @@ public static class EvaniaMascot
     static void Link(Dictionary<long, List<long>> adj, long a, long b)
     {
         if (a == b) return;
-        List<long> la;
-        if (!adj.TryGetValue(a, out la)) { la = new List<long>(2); adj[a] = la; }
-        List<long> lb;
-        if (!adj.TryGetValue(b, out lb)) { lb = new List<long>(2); adj[b] = lb; }
+        if (!adj.TryGetValue(a, out List<long>? la)) { la = new List<long>(2); adj[a] = la; }
+        if (!adj.TryGetValue(b, out List<long>? lb)) { lb = new List<long>(2); adj[b] = lb; }
         la.Add(b);
         lb.Add(a);
     }

@@ -350,10 +350,18 @@ public static class DatabaseService
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
 
         bool sourceExists = File.Exists(sourcePath);
+        bool targetExists = File.Exists(targetPath);
 
-        if (sourceExists && File.Exists(targetPath))
+        if (sourceExists && targetExists)
         {
-            return $"A file already exists at {targetPath}. Move or delete it first - Evania will not overwrite a database.";
+            long targetSize = new FileInfo(targetPath).Length;
+
+            if (targetSize > 0)
+            {
+                return $"A file already exists at {targetPath}. Move or delete it first - Evania will not overwrite a database.";
+            }
+
+            DeleteDataFiles(targetPath);
         }
 
         if (!sourceExists)
@@ -365,7 +373,7 @@ public static class DatabaseService
         {
             if (File.Exists(related))
             {
-                File.Move(related, targetPath + related.Substring(sourcePath.Length));
+                File.Move(related, targetPath + related.Substring(sourcePath.Length), overwrite: true);
             }
         }
 

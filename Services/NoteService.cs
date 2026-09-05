@@ -19,13 +19,11 @@ public static class NoteService
 
             if (normalizedFilter.Length > 0)
             {
-                string[] filterTerms = normalizedFilter.Split(
-                    (char[]?)null,
-                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                string[] filterTerms = SearchService.SplitTerms(normalizedFilter);
 
                 query = query.Where(note =>
-                    MatchesWordPrefixes(note.Title, filterTerms) ||
-                    MatchesWordPrefixes(note.PlainText, filterTerms));
+                    SearchService.MatchesWordPrefixes(note.Title, filterTerms) ||
+                    SearchService.MatchesWordPrefixes(note.PlainText, filterTerms));
             }
 
             query = sortOrder switch
@@ -159,55 +157,8 @@ public static class NoteService
     public static string CreateListStateKey(string filter, NoteSortOrder sortOrder) =>
         $"{sortOrder}:{filter.Trim().ToUpperInvariant()}";
 
-    public static IEnumerable<(int Start, int Length)> FindWordPrefixMatchRanges(string? text, string? filter)
-    {
-        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(filter))
-        {
-            yield break;
-        }
-
-        string[] filterTerms = filter.Trim().Split(
-            (char[]?)null,
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        foreach (string term in filterTerms)
-        {
-            int textIndex = 0;
-            while (textIndex < text.Length)
-            {
-                while (textIndex < text.Length && char.IsWhiteSpace(text[textIndex]))
-                {
-                    textIndex++;
-                }
-
-                int wordStart = textIndex;
-                while (textIndex < text.Length && !char.IsWhiteSpace(text[textIndex]))
-                {
-                    textIndex++;
-                }
-
-                if (textIndex > wordStart && text.AsSpan(wordStart, textIndex - wordStart).StartsWith(term, StringComparison.CurrentCultureIgnoreCase))
-                {
-                    yield return (wordStart, term.Length);
-                }
-            }
-        }
-    }
-
-    private static bool MatchesWordPrefixes(string? text, IReadOnlyList<string> filterTerms)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        string[] words = text.Split(
-            (char[]?)null,
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return filterTerms.All(term => words.Any(word =>
-            word.StartsWith(term, StringComparison.CurrentCultureIgnoreCase)));
-    }
+    public static IEnumerable<(int Start, int Length)> FindWordPrefixMatchRanges(string? text, string? filter) =>
+        SearchService.FindWordPrefixMatchRanges(text, filter);
 
     public static Task<double> GetListScrollOffsetAsync(string stateKey) =>
         Task.Run(() => DatabaseService.GetNoteListScrollOffset(stateKey));

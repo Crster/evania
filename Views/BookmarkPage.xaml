@@ -7,7 +7,8 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-    Loaded="BookmarkPage_Loaded">
+    Loaded="BookmarkPage_Loaded"
+    Unloaded="BookmarkPage_Unloaded">
 
     <Grid>
         <WebView2 x:Name="BookmarkBrowser" />

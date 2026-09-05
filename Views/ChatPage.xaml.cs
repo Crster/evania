@@ -32,9 +32,16 @@ public sealed partial class ChatPage : Page
 
     private async void ChatPage_Loaded(object sender, RoutedEventArgs e)
     {
+        SettingsService.Current.PropertyChanged -= Settings_PropertyChanged;
         SettingsService.Current.PropertyChanged += Settings_PropertyChanged;
 
-        if (initializing || ChatBrowser.CoreWebView2 is not null)
+        if (ChatBrowser.CoreWebView2 is not null)
+        {
+            SyncChatSource();
+            return;
+        }
+
+        if (initializing)
         {
             return;
         }
@@ -51,7 +58,7 @@ public sealed partial class ChatPage : Page
             ? global::Windows.UI.Color.FromArgb(0xFF, 0x20, 0x20, 0x20)
             : global::Windows.UI.Color.FromArgb(0xFF, 0xF3, 0xF3, 0xF3);
 
-        ChatBrowser.Source = ViewModel.ChatUrl;
+        SyncChatSource();
     }
 
     private void ChatPage_Unloaded(object sender, RoutedEventArgs e)
@@ -67,7 +74,17 @@ public sealed partial class ChatPage : Page
     {
         if (e.PropertyName == nameof(AppSettings.ChatProvider) && ChatBrowser.CoreWebView2 is not null)
         {
-            ChatBrowser.Source = ViewModel.ChatUrl;
+            SyncChatSource();
+        }
+    }
+
+    private void SyncChatSource()
+    {
+        Uri target = ViewModel.ChatUrl;
+
+        if (ChatBrowser.Source != target)
+        {
+            ChatBrowser.Source = target;
         }
     }
 }

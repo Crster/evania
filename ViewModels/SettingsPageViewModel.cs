@@ -244,10 +244,11 @@ namespace Evania.ViewModels
             {
                 string? currentPassword = DatabaseService.CurrentPassword ?? Settings.DatabasePassword;
                 bool passwordChanged = !string.Equals(CandidatePassword, currentPassword ?? string.Empty, StringComparison.Ordinal);
+                bool wantEncrypted = !string.IsNullOrEmpty(CandidatePassword);
 
                 DatabaseStatus result = await DatabaseService.ApplyAsync(
                     CandidatePath,
-                    Settings.DatabaseEncryption,
+                    wantEncrypted,
                     passwordChanged ? CandidatePassword : currentPassword);
 
                 if (!result.Connected)

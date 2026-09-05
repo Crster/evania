@@ -152,7 +152,7 @@ public sealed partial class MainWindow : Window
         if (item.Tag.StartsWith(MainViewModel.BookmarkTagPrefix, StringComparison.Ordinal))
         {
             string bookmarkUrl = item.Tag[MainViewModel.BookmarkTagPrefix.Length..];
-            TitleBarSearchBox.PlaceholderText = "Search";
+            TitleBarSearchBox.PlaceholderText = "Search bookmarks";
             Navigate(typeof(BookmarkPage), bookmarkUrl);
             return;
         }

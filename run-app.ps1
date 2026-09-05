@@ -67,9 +67,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Packaging drops the main package and its scale resource packages into the build
-# layout; the exact folder varies with how publish was invoked (bin or obj), and a
-# previous run's artifacts may still be lying around, so take the newest main package.
-$candidates = Get-ChildItem -Path (Join-Path $PSScriptRoot "bin"), (Join-Path $PSScriptRoot "obj") -Recurse -Filter "*.msix" -ErrorAction SilentlyContinue
+# layout; the exact folder varies with how publish was invoked (bin, obj, or the
+# project-root AppPackages the packaging targets default to), and a previous run's
+# artifacts may still be lying around, so take the newest main package.
+$candidates = Get-ChildItem -Path (Join-Path $PSScriptRoot "bin"), (Join-Path $PSScriptRoot "obj"), (Join-Path $PSScriptRoot "AppPackages") -Recurse -Filter "*.msix" -ErrorAction SilentlyContinue
 $mainPackage = $candidates |
     Where-Object { $_.Name -notmatch '_scale-\d+' } |
     Sort-Object LastWriteTime -Descending |

@@ -25,6 +25,36 @@ public static class ScreenshotHotkeyExtensions
     };
 }
 
+/// <summary>Which AI chat service the Chat page shows.</summary>
+public enum ChatProvider
+{
+    Gemini,
+    Copilot,
+    ChatGPT,
+    Claude,
+}
+
+public static class ChatProviderExtensions
+{
+    public static string ToDisplayString(this ChatProvider provider) => provider switch
+    {
+        ChatProvider.Gemini => "Gemini",
+        ChatProvider.Copilot => "Copilot",
+        ChatProvider.ChatGPT => "ChatGPT",
+        ChatProvider.Claude => "Claude",
+        _ => "Gemini",
+    };
+
+    public static string ToUrl(this ChatProvider provider) => provider switch
+    {
+        ChatProvider.Gemini => "https://gemini.google.com/app",
+        ChatProvider.Copilot => "https://copilot.microsoft.com",
+        ChatProvider.ChatGPT => "https://chatgpt.com",
+        ChatProvider.Claude => "https://claude.ai",
+        _ => "https://gemini.google.com/app",
+    };
+}
+
 /// <summary>
 /// Everything the Settings page edits, live.
 ///
@@ -55,6 +85,13 @@ public partial class AppSettings : ObservableObject
 
     [ObservableProperty]
     public partial bool AutoSaveScreenshot { get; set; }
+
+    /// <summary>
+    /// The AI chat service the Chat page hosts. The page subscribes to this property so switching
+    /// providers in Settings navigates a loaded Chat page immediately.
+    /// </summary>
+    [ObservableProperty]
+    public partial ChatProvider ChatProvider { get; set; } = ChatProvider.Gemini;
 
     /// <summary>
     /// The master password loaded from Windows Credential Manager for this session, or null while

@@ -58,6 +58,13 @@ public partial class App : Application
         CopilotKeyService.Attach(WinRT.Interop.WindowNative.GetWindowHandle(MainWindow));
         CopilotKeyService.Tapped += HandleCopilotKeyTapped;
 
+        // A Copilot key press means the chat - said out loud rather than left to wherever the
+        // opening menu item happens to land.
+        if (copilotKeyState == "Tap")
+        {
+            MainWindow.NavigateToChat();
+        }
+
         // Windows can disable startup behind the app's back (Task Manager, Settings), so the stored
         // setting is corrected against the operating system before it decides anything else -
         // including whether this launch shows a window at all.
@@ -160,11 +167,24 @@ public partial class App : Application
     {
         if (CopilotKeyStateFrom(e) == "Tap")
         {
-            MainWindow?.DispatcherQueue.TryEnqueue(() => MainWindow?.Present());
+            MainWindow?.DispatcherQueue.TryEnqueue(() =>
+            {
+                MainWindow?.NavigateToChat();
+                MainWindow?.Present();
+            });
         }
     }
 
-    private static void HandleCopilotKeyTapped() => MainWindow?.Present();
+    private static void HandleCopilotKeyTapped()
+    {
+        if (MainWindow is null)
+        {
+            return;
+        }
+
+        MainWindow.NavigateToChat();
+        MainWindow.Present();
+    }
 
     private static void OnHotkeyInvoked() => _ = CaptureFlowService.RunAsync();
 

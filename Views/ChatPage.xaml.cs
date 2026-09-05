@@ -1,0 +1,74 @@
+using System;
+using System.ComponentModel;
+using Evania.Services;
+using Evania.ViewModels;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.Web.WebView2.Core;
+
+namespace Evania.Views;
+
+/// <summary>
+/// The Chat page: nothing but a browser aimed at whichever AI provider the settings choose. The
+/// browser's profile folder is fixed by <see cref="SettingsService.ChatDataFolder"/>, which is
+/// what keeps a provider's sign-in alive between sessions.
+/// </summary>
+public sealed partial class ChatPage : Page
+{
+    public ChatPageViewModel ViewModel { get; } = new();
+
+    /// <summary>
+    /// The WebView2 initialises once per page instance. Source is set only after the environment
+    /// is ready - a Source in XAML would let the control initialise itself against the default
+    /// profile folder before this code could steer it to the shared one.
+    /// </summary>
+    private bool initializing;
+
+    public ChatPage()
+    {
+        InitializeComponent();
+        DataContext = ViewModel;
+    }
+
+    private async void ChatPage_Loaded(object sender, RoutedEventArgs e)
+    {
+        SettingsService.Current.PropertyChanged += Settings_PropertyChanged;
+
+        if (initializing || ChatBrowser.CoreWebView2 is not null)
+        {
+            return;
+        }
+
+        initializing = true;
+
+        CoreWebView2Environment environment = await CoreWebView2Environment.CreateWithOptionsAsync(
+            null, SettingsService.ChatDataFolder, null);
+
+        await ChatBrowser.EnsureCoreWebView2Async(environment);
+
+        // Match the window's backdrop so the content arriving does not flash white (or black)
+        // against it first.
+        ChatBrowser.DefaultBackgroundColor = ActualTheme == ElementTheme.Dark
+            ? global::Windows.UI.Color.FromArgb(0xFF, 0x20, 0x20, 0x20)
+            : global::Windows.UI.Color.FromArgb(0xFF, 0xF3, 0xF3, 0xF3);
+
+        ChatBrowser.Source = ViewModel.ChatUrl;
+    }
+
+    private void ChatPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        SettingsService.Current.PropertyChanged -= Settings_PropertyChanged;
+    }
+
+    /// <summary>
+    /// A provider switch made in Settings moves a loaded Chat page at once - the setting applies
+    /// as it is flipped, like every other switch in the app.
+    /// </summary>
+    private void Settings_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AppSettings.ChatProvider) && ChatBrowser.CoreWebView2 is not null)
+        {
+            ChatBrowser.Source = ViewModel.ChatUrl;
+        }
+    }
+}

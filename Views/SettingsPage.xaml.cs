@@ -32,6 +32,7 @@ public sealed partial class SettingsPage : Page
         "DatabaseHeader",
         "GeneralHeader",
         "ScreenshotHeader",
+        "ChatHeader",
 
         // Setting titles
         "PathTitle",
@@ -40,6 +41,7 @@ public sealed partial class SettingsPage : Page
         "CloseToTrayTitle",
         "ShortcutTitle",
         "AutoSaveTitle",
+        "ProviderTitle",
 
         // Subtitles
         "PathSubtitle",
@@ -47,7 +49,8 @@ public sealed partial class SettingsPage : Page
         "StartWithWindowsSubtitle",
         "CloseToTraySubtitle",
         "ShortcutSubtitle",
-        "AutoSaveSubtitle"
+        "AutoSaveSubtitle",
+        "ProviderSubtitle"
     ];
 
     private TextBlock[] settingLabels = [];
@@ -146,6 +149,7 @@ public sealed partial class SettingsPage : Page
         // item-resolution pass (the selection comes back empty), while a record that is one of the
         // ItemsSource items is matched by reference.
         ShortcutCombo.SelectedItem = ViewModel.SelectedHotkeyOption;
+        ChatProviderCombo.SelectedItem = ViewModel.SelectedChatProviderOption;
     }
 
     private async void Browse_Click(object sender, RoutedEventArgs e)
@@ -233,6 +237,16 @@ public sealed partial class SettingsPage : Page
         {
             ShortcutCombo.SelectedItem = ViewModel.SelectedHotkeyOption;
         }
+    }
+
+    private void ChatProvider_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!loaded || ChatProviderCombo.SelectedItem is not ChatProviderOption option)
+        {
+            return;
+        }
+
+        ViewModel.SetChatProvider(option.Value);
     }
 
     private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)

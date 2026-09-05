@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Evania.Services;
 using Evania.ViewModels;
@@ -102,6 +103,21 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Shows the Chat page - what a Copilot key press means. The chat entry is an ordinary menu
+    /// item, so lighting it up in the pane and navigating go together the way they do for the
+    /// gear above.
+    /// </summary>
+    public void NavigateToChat()
+    {
+        Navigate(typeof(ChatPage));
+
+        if (ViewModel.MenuItems.FirstOrDefault(i => i.Tag == nameof(ChatPage)) is { } chatItem)
+        {
+            NavView.SelectedItem = chatItem;
+        }
+    }
+
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         if (SettingsService.Current.CloseToTray && !IsQuitting)
@@ -130,6 +146,7 @@ public sealed partial class MainWindow : Window
 
         Type? pageType = item?.Tag switch
         {
+            nameof(ChatPage) => typeof(ChatPage),
             nameof(ScreenshotPage) => typeof(ScreenshotPage),
             nameof(ScreenRecordPage) => typeof(ScreenRecordPage),
             nameof(NotePage) => typeof(NotePage),

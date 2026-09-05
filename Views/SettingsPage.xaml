@@ -275,6 +275,34 @@
                     </Grid>
                 </StackPanel>
             </Border>
+
+            <!-- ==================== Chat ==================== -->
+
+            <TextBlock x:Name="ChatHeader" Text="Chat" Style="{StaticResource SectionHeader}" />
+
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel Spacing="0">
+
+                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock x:Name="ProviderTitle" Text="Provider" Style="{StaticResource SettingTitle}" />
+                            <TextBlock
+                                x:Name="ProviderSubtitle"
+                                Text="Which AI chat service the Chat page opens. Your sign-in is kept for every provider, so switching back later finds you still logged in."
+                                Style="{StaticResource SettingSubtitle}" />
+                        </StackPanel>
+                        <ComboBox
+                            x:Name="ChatProviderCombo"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            MinWidth="200"
+                            Height="36"
+                            ItemsSource="{x:Bind ViewModel.ChatProviderOptions}"
+                            DisplayMemberPath="Display"
+                            SelectionChanged="ChatProvider_SelectionChanged" />
+                    </Grid>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </Page>

@@ -29,6 +29,12 @@ namespace Evania.ViewModels
             {
                 new NavigationItemViewModel
                 {
+                    Content = "Chat",
+                    Tag = "ChatPage",
+                    IconGlyph = "\uE8BD"
+                },
+                new NavigationItemViewModel
+                {
                     Content = "Screenshot",
                     Tag = "ScreenshotPage",
                     IconGlyph = "\uF406"

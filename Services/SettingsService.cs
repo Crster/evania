@@ -22,6 +22,13 @@ public static partial class SettingsService
 
     public static string FilePath => Path.Combine(RootDirectory, "settings.json");
 
+    /// <summary>
+    /// The WebView2 user data folder the Chat page browses with. Explicit rather than the runtime
+    /// default so cookies - and with them the sign-in to each provider - live outside the package
+    /// and survive both loose-file and staged runs.
+    /// </summary>
+    public static string ChatDataFolder => Path.Combine(RootDirectory, "chat-webview");
+
     private static readonly Lazy<AppSettings> lazyCurrent = new(CreateAndLoad);
 
     public static AppSettings Current => lazyCurrent.Value;
@@ -74,6 +81,7 @@ public static partial class SettingsService
             CloseToTray = settings.CloseToTray,
             ScreenshotShortcut = settings.ScreenshotShortcut,
             AutoSaveScreenshot = settings.AutoSaveScreenshot,
+            ChatProvider = settings.ChatProvider,
         };
 
         try
@@ -124,6 +132,7 @@ public static partial class SettingsService
         settings.CloseToTray = dto.CloseToTray;
         settings.ScreenshotShortcut = dto.ScreenshotShortcut;
         settings.AutoSaveScreenshot = dto.AutoSaveScreenshot;
+        settings.ChatProvider = dto.ChatProvider;
     }
 
     private sealed class SettingsDto
@@ -139,6 +148,8 @@ public static partial class SettingsService
         public ScreenshotHotkey ScreenshotShortcut { get; set; }
 
         public bool AutoSaveScreenshot { get; set; }
+
+        public ChatProvider ChatProvider { get; set; }
     }
 
     [JsonSourceGenerationOptions(WriteIndented = true)]

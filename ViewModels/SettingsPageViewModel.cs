@@ -12,6 +12,9 @@ namespace Evania.ViewModels
     /// <summary>One entry in the shortcut dropdown.</summary>
     public sealed record HotkeyOption(ScreenshotHotkey Value, string Display);
 
+    /// <summary>One entry in the chat provider dropdown.</summary>
+    public sealed record ChatProviderOption(ChatProvider Value, string Display);
+
     /// <summary>
     /// Backs the Settings page.
     ///
@@ -34,6 +37,14 @@ namespace Evania.ViewModels
             new HotkeyOption(ScreenshotHotkey.AltPrintScreen, ScreenshotHotkey.AltPrintScreen.ToDisplayString()),
             new HotkeyOption(ScreenshotHotkey.CtrlShift3, ScreenshotHotkey.CtrlShift3.ToDisplayString()),
             new HotkeyOption(ScreenshotHotkey.AltP, ScreenshotHotkey.AltP.ToDisplayString()),
+        ];
+
+        public IReadOnlyList<ChatProviderOption> ChatProviderOptions { get; } =
+        [
+            new ChatProviderOption(ChatProvider.Gemini, ChatProvider.Gemini.ToDisplayString()),
+            new ChatProviderOption(ChatProvider.Copilot, ChatProvider.Copilot.ToDisplayString()),
+            new ChatProviderOption(ChatProvider.ChatGPT, ChatProvider.ChatGPT.ToDisplayString()),
+            new ChatProviderOption(ChatProvider.Claude, ChatProvider.Claude.ToDisplayString()),
         ];
 
         /// <summary>The path typed into the box, which may differ from the live one until Apply.</summary>
@@ -64,6 +75,13 @@ namespace Evania.ViewModels
                     SetShortcut(value.Value);
                 }
             }
+        } = null!;
+
+        /// <summary>The chat provider dropdown selection, as the option record the ComboBox holds.</summary>
+        public ChatProviderOption SelectedChatProviderOption
+        {
+            get => field ?? ChatProviderOptions[0];
+            set => SetProperty(ref field, value);
         } = null!;
 
         private bool stagingHotkey;
@@ -100,6 +118,8 @@ namespace Evania.ViewModels
             stagingHotkey = true;
             SelectedHotkeyOption = HotkeyOptions.FirstOrDefault(o => o.Value == Settings.ScreenshotShortcut) ?? HotkeyOptions[0];
             stagingHotkey = false;
+
+            SelectedChatProviderOption = ChatProviderOptions.FirstOrDefault(o => o.Value == Settings.ChatProvider) ?? ChatProviderOptions[0];
         }
 
         public bool HasError => ErrorMessage.Length > 0;
@@ -216,6 +236,12 @@ namespace Evania.ViewModels
         }
 
         public void SetAutoSave(bool enabled) => Settings.AutoSaveScreenshot = enabled;
+
+        /// <summary>
+        /// The Chat page listens to this setting itself, so a switch here moves a loaded chat
+        /// straight to the new provider.
+        /// </summary>
+        public void SetChatProvider(ChatProvider provider) => Settings.ChatProvider = provider;
 
         public void SetShortcut(ScreenshotHotkey hotkey)
         {

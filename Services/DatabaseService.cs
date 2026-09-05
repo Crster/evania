@@ -345,49 +345,6 @@ public static class DatabaseService
         }
     }
 
-    /// <summary>
-    /// Throws the data file away and creates a new one in the requested state.
-    /// </summary>
-    public static Task<DatabaseStatus> RecreateAsync(string path, bool wantEncrypted, string? password = null) =>
-        Task.Run(() => Recreate(path, wantEncrypted, password));
-
-    private static DatabaseStatus Recreate(string path, bool wantEncrypted, string? password)
-    {
-        lock (Gate)
-        {
-            AppSettings settings = SettingsService.Current;
-            string? targetPassword = wantEncrypted
-                ? (!string.IsNullOrEmpty(password) ? password : settings.DatabasePassword ?? ReadPassword(path))
-                : null;
-
-            try
-            {
-                FlushAndClose();
-                DeleteDataFiles(path);
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-
-                DatabaseStatus opened = Open(path, targetPassword);
-
-                if (!opened.Connected)
-                {
-                    return opened;
-                }
-
-                settings.DatabasePath = path;
-                settings.DatabaseEncryption = wantEncrypted;
-                settings.DatabasePassword = targetPassword;
-                settings.PendingDatabasePassword = null;
-                SavePassword(path, targetPassword);
-
-                return opened;
-            }
-            catch (Exception ex)
-            {
-                return new DatabaseStatus(false, wantEncrypted, Explain(ex), 0);
-            }
-        }
-    }
-
     private static string? Relocate(string sourcePath, string targetPath)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);

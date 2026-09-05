@@ -167,27 +167,14 @@ namespace Evania.ViewModels
                 string? currentPassword = DatabaseService.CurrentPassword ?? Settings.DatabasePassword;
                 bool passwordChanged = !string.Equals(CandidatePassword, currentPassword ?? string.Empty, StringComparison.Ordinal);
 
-                if (passwordChanged)
+                DatabaseStatus result = await DatabaseService.ApplyAsync(
+                    CandidatePath,
+                    Settings.DatabaseEncryption,
+                    passwordChanged ? CandidatePassword : currentPassword);
+
+                if (!result.Connected)
                 {
-                    // A changed password cannot open the old file, so the database is rebuilt:
-                    // the current file is deleted and an empty one is created under the new password.
-                    bool encrypt = !string.IsNullOrEmpty(CandidatePassword);
-
-                    DatabaseStatus result = await DatabaseService.RecreateAsync(CandidatePath, encrypt, encrypt ? CandidatePassword : null);
-
-                    if (!result.Connected)
-                    {
-                        ErrorMessage = result.Error ?? "The database could not be rebuilt.";
-                    }
-                }
-                else
-                {
-                    DatabaseStatus result = await DatabaseService.ApplyAsync(CandidatePath, Settings.DatabaseEncryption, currentPassword);
-
-                    if (!result.Connected)
-                    {
-                        ErrorMessage = result.Error ?? "The database could not be changed.";
-                    }
+                    ErrorMessage = result.Error ?? "The database could not be changed.";
                 }
             }
             finally

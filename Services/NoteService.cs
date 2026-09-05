@@ -37,12 +37,16 @@ public static class NoteService
                 _ => query.OrderByDescending(note => note.UpdatedAt),
             };
 
+            bool sortByCreated = sortOrder == NoteSortOrder.CreatedDescending;
+
             return (IReadOnlyList<NoteListItem>)query.Select(note => new NoteListItem
             {
                 Id = note.Id,
                 DisplayTitle = GetDisplayTitle(note),
                 Preview = CreatePreview(note),
-                UpdatedAt = note.UpdatedAt,
+                TimeText = sortByCreated
+                    ? "Created " + RelativeTimeText(note.CreatedAt)
+                    : RelativeTimeText(note.UpdatedAt),
             }).ToList();
         });
 
@@ -56,11 +60,22 @@ public static class NoteService
 
     public static Task<NoteDocument?> GetAsync(ObjectId id) => Task.Run(() => Normalize(DatabaseService.GetNote(id)));
 
-    public static Task SaveAsync(NoteDocument note, IReadOnlyCollection<string>? removedAttachmentIds = null) =>
+    public static Task SaveAsync(
+        NoteDocument note,
+        IReadOnlyCollection<string>? removedAttachmentIds = null,
+        bool bumpUpdatedAt = true) =>
         Task.Run(() =>
         {
             note.Title = (note.Title ?? string.Empty).Trim();
-            note.UpdatedAt = DateTime.UtcNow;
+
+            // Opening a note for viewing saves it too, so only move UpdatedAt when content or the
+            // attachment set actually changed; otherwise "updated" drifts toward "last opened" and
+            // the updated/created sorts stop ever differing.
+            if (bumpUpdatedAt)
+            {
+                note.UpdatedAt = DateTime.UtcNow;
+            }
+
             DatabaseService.UpsertNote(note);
 
             if (removedAttachmentIds is null)
@@ -199,6 +214,21 @@ public static class NoteService
 
     public static Task SaveListScrollOffsetAsync(string stateKey, double offset) =>
         Task.Run(() => DatabaseService.SaveNoteListScrollOffset(stateKey, offset));
+
+    private static string RelativeTimeText(DateTime utc)
+    {
+        TimeSpan elapsed = DateTime.UtcNow - utc.ToUniversalTime();
+
+        return elapsed.TotalMinutes switch
+        {
+            < 1 => "just now",
+            < 60 => $"{(int)elapsed.TotalMinutes} min ago",
+            < 24 * 60 => $"{(int)elapsed.TotalHours} hr ago",
+            < 30 * 24 * 60 => $"{(int)elapsed.TotalDays} day ago",
+            < 365 * 24 * 60 => $"{(int)(elapsed.TotalDays / 30)} mo ago",
+            _ => $"{(int)(elapsed.TotalDays / 365)} yr ago",
+        };
+    }
 
     private static string CreatePreview(NoteDocument note)
     {

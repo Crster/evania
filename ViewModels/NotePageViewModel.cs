@@ -17,6 +17,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? saveDelay;
     private NoteDocument? currentNote;
     private bool loadingEditor;
+    private bool noteDirty;
 
     public ObservableCollection<NoteListItem> Notes { get; } = new();
 
@@ -38,7 +39,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
     public partial string Filter { get; set; } = string.Empty;
 
     [ObservableProperty]
-    public partial NoteSortOrder SelectedSort { get; set; } = NoteSortOrder.UpdatedDescending;
+    public partial NoteSortOrder SelectedSort { get; set; } = SettingsService.Current.NoteSort;
 
     [ObservableProperty]
     public partial string ErrorMessage { get; set; } = string.Empty;
@@ -74,13 +75,18 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         if (!loadingEditor && currentNote is not null)
         {
             currentNote.Title = value;
+            noteDirty = true;
             ScheduleSave();
         }
     }
 
     partial void OnFilterChanged(string value) => _ = ReloadListAsync();
 
-    partial void OnSelectedSortChanged(NoteSortOrder value) => _ = ReloadListAsync();
+    partial void OnSelectedSortChanged(NoteSortOrder value)
+    {
+        SettingsService.Current.NoteSort = value;
+        _ = ReloadListAsync();
+    }
 
     partial void OnErrorMessageChanged(string value) => OnPropertyChanged(nameof(HasError));
 
@@ -178,6 +184,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
             await NoteService.DeleteAsync(note);
             IsEditing = false;
             currentNote = null;
+            noteDirty = false;
             Attachments.Clear();
             removedAttachmentIds.Clear();
             await ReloadListAsync();
@@ -201,6 +208,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
 
         currentNote.Markdown = markdown;
         currentNote.PlainText = plainText.TrimEnd('\r', '\n');
+        noteDirty = true;
         ScheduleSave();
     }
 
@@ -248,6 +256,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
             currentNote.Attachments.Add(attachment);
             NoteAttachmentItem item = ToItem(attachment);
             Attachments.Add(item);
+            noteDirty = true;
             ScheduleSave();
             return item;
         }
@@ -274,6 +283,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         currentNote.Attachments.Remove(attachment);
         Attachments.Remove(item);
         removedAttachmentIds.Add(item.Id);
+        noteDirty = true;
         ScheduleSave();
     }
 
@@ -291,6 +301,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         }
 
         item.FileName = newFileName;
+        noteDirty = true;
         ScheduleSave();
     }
 
@@ -388,8 +399,9 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         {
             IsSaving = true;
             string[] removed = removedAttachmentIds.ToArray();
-            await NoteService.SaveAsync(note, removed);
+            await NoteService.SaveAsync(note, removed, bumpUpdatedAt: noteDirty);
             removedAttachmentIds.ExceptWith(removed);
+            noteDirty = false;
         }
         catch (Exception ex)
         {

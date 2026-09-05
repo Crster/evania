@@ -73,27 +73,9 @@ public partial class NoteListItem : ObservableObject
 
     public required string DisplayTitle { get; init; }
 
-    public required DateTime UpdatedAt { get; init; }
-
     public required string Preview { get; init; }
 
-    public string UpdatedText
-    {
-        get
-        {
-            TimeSpan elapsed = DateTime.UtcNow - UpdatedAt.ToUniversalTime();
-
-            return elapsed.TotalMinutes switch
-            {
-                < 1 => "just now",
-                < 60 => $"{(int)elapsed.TotalMinutes} min ago",
-                < 24 * 60 => $"{(int)elapsed.TotalHours} hr ago",
-                < 30 * 24 * 60 => $"{(int)elapsed.TotalDays} day ago",
-                < 365 * 24 * 60 => $"{(int)(elapsed.TotalDays / 30)} mo ago",
-                _ => $"{(int)(elapsed.TotalDays / 365)} yr ago"
-            };
-        }
-    }
+    public required string TimeText { get; init; }
 }
 
 public partial class NoteAttachmentItem : ObservableObject

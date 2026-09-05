@@ -56,7 +56,13 @@ namespace Evania.ViewModels
         public partial string CandidatePassword { get; set; } = string.Empty;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ApplyIsEnabled), nameof(ShowApplyLabel))]
         public partial bool IsApplying { get; set; }
+
+        /// <summary>Briefly true after a successful apply so the button can show a check before resetting.</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ApplyIsEnabled), nameof(ShowApplyLabel))]
+        public partial bool IsSuccess { get; set; }
 
         [ObservableProperty]
         public partial string StatusText { get; set; } = string.Empty;
@@ -130,6 +136,16 @@ namespace Evania.ViewModels
             !string.Equals(CandidatePassword, DatabaseService.CurrentPassword ?? Settings.DatabasePassword ?? string.Empty, StringComparison.Ordinal);
 
         /// <summary>
+        /// The Apply button stays usable while something is staged, goes inert while the work runs,
+        /// and turns back on for the brief success check so the flash does not render as a disabled
+        /// button.
+        /// </summary>
+        public bool ApplyIsEnabled => (NeedsApply || IsSuccess) && !IsApplying;
+
+        /// <summary>The plain label only shows when neither the spinner nor the check is up.</summary>
+        public bool ShowApplyLabel => !IsApplying && !IsSuccess;
+
+        /// <summary>
         /// True when a launch will land in the tray with no window - which only happens with both
         /// General switches on, and is worth saying where it comes from.
         /// </summary>
@@ -143,14 +159,22 @@ namespace Evania.ViewModels
 
         partial void OnErrorMessageChanged(string value) => OnPropertyChanged(nameof(HasError));
 
-        partial void OnCandidatePathChanged(string value) => OnPropertyChanged(nameof(NeedsApply));
+        partial void OnCandidatePathChanged(string value)
+        {
+            OnPropertyChanged(nameof(NeedsApply));
+            OnPropertyChanged(nameof(ApplyIsEnabled));
+        }
 
-        partial void OnCandidatePasswordChanged(string value) => OnPropertyChanged(nameof(NeedsApply));
+        partial void OnCandidatePasswordChanged(string value)
+        {
+            OnPropertyChanged(nameof(NeedsApply));
+            OnPropertyChanged(nameof(ApplyIsEnabled));
+        }
 
         [RelayCommand]
         private async Task ApplyDatabaseAsync()
         {
-            if (IsApplying)
+            if (IsApplying || IsSuccess)
             {
                 return;
             }
@@ -161,6 +185,8 @@ namespace Evania.ViewModels
             // Normalise what was typed before it is compared to anything, so a stray space cannot
             // leave Apply looking needed forever.
             CandidatePath = CandidatePath.Trim();
+
+            bool applied = false;
 
             try
             {
@@ -176,11 +202,23 @@ namespace Evania.ViewModels
                 {
                     ErrorMessage = result.Error ?? "The database could not be changed.";
                 }
+                else
+                {
+                    applied = true;
+                }
             }
             finally
             {
                 IsApplying = false;
                 RefreshStatus();
+            }
+
+            if (applied)
+            {
+                // Confirm with a check before the button falls back to the plain label.
+                IsSuccess = true;
+                await Task.Delay(1600);
+                IsSuccess = false;
             }
         }
 
@@ -259,6 +297,7 @@ namespace Evania.ViewModels
             StatusText = status.Description;
 
             OnPropertyChanged(nameof(NeedsApply));
+            OnPropertyChanged(nameof(ApplyIsEnabled));
         }
     }
 }

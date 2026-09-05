@@ -33,6 +33,7 @@ public sealed partial class NotePage : Page
     {
         InitializeComponent();
         DataContext = ViewModel;
+        SortToggle.IsChecked = ViewModel.SelectedSort == NoteSortOrder.CreatedDescending;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         Editor.ImageResolver = ResolveImageAsync;
         Editor.LinkRenamed += Editor_LinkRenamed;

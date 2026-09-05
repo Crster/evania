@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using Evania.Models;
 
 namespace Evania.Services;
 
@@ -92,6 +93,12 @@ public partial class AppSettings : ObservableObject
     /// </summary>
     [ObservableProperty]
     public partial ChatProvider ChatProvider { get; set; } = ChatProvider.Gemini;
+
+    /// <summary>
+    /// The notes list sort the user last chose; the Notes page restores it on load.
+    /// </summary>
+    [ObservableProperty]
+    public partial NoteSortOrder NoteSort { get; set; } = NoteSortOrder.UpdatedDescending;
 
     /// <summary>
     /// The master password loaded from Windows Credential Manager for this session, or null while

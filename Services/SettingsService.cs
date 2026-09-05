@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Evania.Models;
 
 namespace Evania.Services;
 
@@ -82,6 +83,7 @@ public static partial class SettingsService
             ScreenshotShortcut = settings.ScreenshotShortcut,
             AutoSaveScreenshot = settings.AutoSaveScreenshot,
             ChatProvider = settings.ChatProvider,
+            NoteSort = settings.NoteSort,
         };
 
         try
@@ -133,6 +135,7 @@ public static partial class SettingsService
         settings.ScreenshotShortcut = dto.ScreenshotShortcut;
         settings.AutoSaveScreenshot = dto.AutoSaveScreenshot;
         settings.ChatProvider = dto.ChatProvider;
+        settings.NoteSort = dto.NoteSort;
     }
 
     private sealed class SettingsDto
@@ -150,6 +153,8 @@ public static partial class SettingsService
         public bool AutoSaveScreenshot { get; set; }
 
         public ChatProvider ChatProvider { get; set; }
+
+        public NoteSortOrder NoteSort { get; set; }
     }
 
     [JsonSourceGenerationOptions(WriteIndented = true)]

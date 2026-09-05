@@ -436,7 +436,7 @@
                                     TextTrimming="CharacterEllipsis" />
                                 <TextBlock
                                     Grid.Column="1"
-                                    Text="{Binding UpdatedText}"
+                                    Text="{Binding TimeText}"
                                     FontSize="11"
                                     Opacity="0.55"
                                     VerticalAlignment="Center"

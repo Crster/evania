@@ -144,18 +144,45 @@
                                 PasswordChanged="PasswordBox_PasswordChanged" />
                             <Button
                                 Grid.Column="1"
-                                Content="Apply"
                                 Style="{StaticResource AccentButtonStyle}"
-                                MinWidth="100"
+                                MinWidth="112"
                                 Height="32"
-                                IsEnabled="{x:Bind ViewModel.NeedsApply, Mode=OneWay}"
-                                Command="{x:Bind ViewModel.ApplyDatabaseCommand}" />
+                                IsEnabled="{x:Bind ViewModel.ApplyIsEnabled, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.ApplyDatabaseCommand}">
+                                <Grid>
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        HorizontalAlignment="Center"
+                                        Visibility="{x:Bind ViewModel.ShowApplyLabel, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="Apply" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Visibility="{x:Bind ViewModel.IsApplying, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <ProgressRing Width="16" Height="16" IsActive="True" />
+                                        <TextBlock Text="Applying…" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Visibility="{x:Bind ViewModel.IsSuccess, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <FontIcon Glyph="&#xE73E;" FontSize="14" VerticalAlignment="Center" />
+                                        <TextBlock Text="Applied" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
                             <FontIcon Glyph="&#xE7BA;" FontSize="13" Opacity="0.55" VerticalAlignment="Top" Margin="0,1,0,0" />
                             <TextBlock
-                                Text="Applying a changed password rebuilds the database - the current file is deleted and an empty one is protected by the new password."
+                                Text="Applying a changed password rebuilds the database in place - your notes, passwords and other data are kept, simply re-encrypted under the new password."
                                 FontSize="12"
                                 Opacity="0.55"
                                 TextWrapping="Wrap" />

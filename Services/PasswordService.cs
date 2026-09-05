@@ -102,7 +102,7 @@ public static class PasswordService
         Task.Run(() => PasswordCsv.ToBrowserCsv(DatabaseService.GetPasswords()));
 
     private static string Fingerprint(PasswordDocument entry) =>
-        $"{entry.Site.Trim().ToUpperInvariant()}\u0000{entry.Username.Trim().ToUpperInvariant()}\u0000{entry.Password}";
+        $"{(entry.Site ?? string.Empty).Trim().ToUpperInvariant()}\u0000{(entry.Username ?? string.Empty).Trim().ToUpperInvariant()}\u0000{entry.Password ?? string.Empty}";
 
     private static bool Contains(string? text, string filter) =>
         !string.IsNullOrEmpty(text) && text.Contains(filter, StringComparison.OrdinalIgnoreCase);

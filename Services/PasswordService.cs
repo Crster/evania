@@ -35,7 +35,7 @@ public static class PasswordService
                     Id = entry.Id,
                     Site = entry.Site,
                     Username = entry.Username,
-                    HasPassword = entry.Password.Length > 0,
+                    HasPassword = (entry.Password ?? string.Empty).Length > 0,
                     HasTotp = !string.IsNullOrWhiteSpace(entry.TotpSecret),
                     UpdatedAt = entry.UpdatedAt,
                 })

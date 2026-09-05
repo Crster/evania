@@ -199,6 +199,13 @@ public partial class PasswordPageViewModel : ObservableObject
             return false;
         }
 
+        if (string.IsNullOrWhiteSpace(EditPassword) && string.IsNullOrWhiteSpace(EditTotpSecret))
+        {
+            ErrorMessage = "Enter a password or an authenticator key.";
+
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(EditTotpSecret) &&
             !TotpService.TryParseSecret(EditTotpSecret, out _, out _, out _))
         {
@@ -213,10 +220,10 @@ public partial class PasswordPageViewModel : ObservableObject
 
             currentEntry.Site = EditSite.Trim();
             currentEntry.Username = EditUsername.Trim();
-            currentEntry.Password = EditPassword;
+            currentEntry.Password = EditPassword ?? string.Empty;
             currentEntry.TotpSecret = TotpService.TryParseSecret(EditTotpSecret, out string normalizedSecret, out _, out _)
                 ? normalizedSecret
-                : EditTotpSecret.Trim();
+                : (EditTotpSecret ?? string.Empty).Trim();
 
             await PasswordService.SaveAsync(currentEntry);
             await ReloadListAsync();

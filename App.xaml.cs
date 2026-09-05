@@ -4,6 +4,7 @@ using Evania.Services;
 using Evania.Windows;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
+using Windows.Foundation;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -47,7 +48,15 @@ public partial class App : Application
             return;
         }
 
+        // Protocol activations can also arrive later, redirected here from a second copy the Copilot
+        // key launched; this subscription is what wakes the main instance for those.
+        AppInstance.GetCurrent().Activated += OnActivated;
+
+        string? copilotKeyState = CopilotKeyStateFrom(AppInstance.GetCurrent().GetActivatedEventArgs());
+
         MainWindow = new MainWindow();
+        CopilotKeyService.Attach(WinRT.Interop.WindowNative.GetWindowHandle(MainWindow));
+        CopilotKeyService.Tapped += HandleCopilotKeyTapped;
 
         // Windows can disable startup behind the app's back (Task Manager, Settings), so the stored
         // setting is corrected against the operating system before it decides anything else -
@@ -55,7 +64,9 @@ public partial class App : Application
         await AutoStartService.SyncSettingAsync();
 
         AppSettings settings = SettingsService.Current;
-        bool startsHiddenInTray = settings.CloseToTray && settings.StartWithWindows;
+
+        // A Copilot key press is an explicit request for the app, so it wins over starting hidden.
+        bool startsHiddenInTray = settings.CloseToTray && settings.StartWithWindows && copilotKeyState != "Tap";
 
         GlobalHotkeyService.Attach();
 
@@ -119,6 +130,41 @@ public partial class App : Application
             return false;
         }
     }
+
+    /// <summary>
+    /// Copilot key states arrive as protocol activations on the <c>evania</c> scheme. Returns the
+    /// state declared in Package.appxmanifest (<c>Tap</c>, <c>Down</c>, <c>Up</c>) when this
+    /// activation came from the Copilot key, and null for anything else.
+    /// </summary>
+    private static string? CopilotKeyStateFrom(AppActivationArguments? activationArgs)
+    {
+        if (activationArgs?.Kind != ExtendedActivationKind.Protocol ||
+            activationArgs.Data is not global::Windows.ApplicationModel.Activation.ProtocolActivatedEventArgs protocolArgs ||
+            !string.Equals(protocolArgs.Uri.Scheme, "evania", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        foreach (IWwwFormUrlDecoderEntry entry in new WwwFormUrlDecoder(protocolArgs.Uri.Query))
+        {
+            if (entry.Name == "state")
+            {
+                return entry.Value;
+            }
+        }
+
+        return null;
+    }
+
+    private static void OnActivated(object? sender, AppActivationArguments e)
+    {
+        if (CopilotKeyStateFrom(e) == "Tap")
+        {
+            MainWindow?.DispatcherQueue.TryEnqueue(() => MainWindow?.Present());
+        }
+    }
+
+    private static void HandleCopilotKeyTapped() => MainWindow?.Present();
 
     private static void OnHotkeyInvoked() => _ = CaptureFlowService.RunAsync();
 

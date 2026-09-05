@@ -61,7 +61,13 @@
 						Id="EvaniaCopilotKeyProvider"
 						DisplayName="Evania Copilot Key Provider"
 						Description="Provides Copilot key integration for Evania."
-						PublicFolder="Public" />
+						PublicFolder="Public">
+						<uap3:Properties>
+							<SingleTap MessageWParam="0">evania://?state=Tap</SingleTap>
+							<PressAndHoldStart MessageWParam="1">evania://?state=Down</PressAndHoldStart>
+							<PressAndHoldStop MessageWParam="2">evania://?state=Up</PressAndHoldStop>
+						</uap3:Properties>
+					</uap3:AppExtension>
 				</uap3:Extension>
 			</Extensions>
 		</Application>

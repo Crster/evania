@@ -1,0 +1,3 @@
+Evania Copilot key provider.
+This folder exists because the com.microsoft.windows.copilotkeyprovider app extension
+declares PublicFolder="Public", and the extension is rejected when the folder is missing.

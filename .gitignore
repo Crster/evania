@@ -10,6 +10,8 @@ obj/
 # MSIX packaging
 *.appxrecipe
 AppxManifest.xml
+AppPackages/
+BundleArtifacts/
 
 # User-specific
 *.csproj.user

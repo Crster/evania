@@ -33,6 +33,7 @@ public sealed partial class SettingsPage : Page
         "GeneralHeader",
         "ScreenshotHeader",
         "ChatHeader",
+        "WebBookmarksHeader",
 
         // Setting titles
         "PathTitle",
@@ -42,6 +43,9 @@ public sealed partial class SettingsPage : Page
         "ShortcutTitle",
         "AutoSaveTitle",
         "ProviderTitle",
+        "BookmarkTitleLabel",
+        "BookmarkUrlLabel",
+        "SavedBookmarksTitle",
 
         // Subtitles
         "PathSubtitle",
@@ -247,6 +251,19 @@ public sealed partial class SettingsPage : Page
         }
 
         ViewModel.SetChatProvider(option.Value);
+    }
+
+    private void AddBookmark_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.AddBookmark();
+    }
+
+    private void RemoveBookmark_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: WebBookmark bookmark })
+        {
+            ViewModel.RemoveBookmark(bookmark);
+        }
     }
 
     private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)

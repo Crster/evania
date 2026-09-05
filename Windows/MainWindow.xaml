@@ -50,11 +50,8 @@
                 <DataTemplate x:DataType="vm:NavigationItemViewModel">
                     <NavigationViewItem
                         Content="{x:Bind Content}"
-                        Tag="{x:Bind Tag}">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="{x:Bind IconGlyph}" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
+                        Tag="{x:Bind Tag}"
+                        Icon="{x:Bind Icon}" />
                 </DataTemplate>
             </NavigationView.MenuItemTemplate>
             <Frame x:Name="NavigationPresenter" />

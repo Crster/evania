@@ -144,7 +144,20 @@ public sealed partial class MainWindow : Window
         // and this is the one place that has to tell the two apart.
         NavigationItemViewModel? item = args.SelectedItem as NavigationItemViewModel;
 
-        Type? pageType = item?.Tag switch
+        if (item is null)
+        {
+            return;
+        }
+
+        if (item.Tag.StartsWith(MainViewModel.BookmarkTagPrefix, StringComparison.Ordinal))
+        {
+            string bookmarkUrl = item.Tag[MainViewModel.BookmarkTagPrefix.Length..];
+            TitleBarSearchBox.PlaceholderText = "Search";
+            Navigate(typeof(BookmarkPage), bookmarkUrl);
+            return;
+        }
+
+        Type? pageType = item.Tag switch
         {
             nameof(ChatPage) => typeof(ChatPage),
             nameof(ScreenshotPage) => typeof(ScreenshotPage),
@@ -156,7 +169,7 @@ public sealed partial class MainWindow : Window
 
         if (pageType != null)
         {
-            TitleBarSearchBox.PlaceholderText = item!.Content switch
+            TitleBarSearchBox.PlaceholderText = item.Content switch
             {
                 "Screenshot" => "Search screenshots",
                 "Screen Record" => "Search recordings",
@@ -168,11 +181,17 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void Navigate(Type pageType)
+    private void Navigate(Type pageType, object? parameter = null)
     {
+        if (pageType == typeof(BookmarkPage))
+        {
+            NavigationPresenter.Navigate(pageType, parameter);
+            return;
+        }
+
         if (NavigationPresenter.CurrentSourcePageType != pageType)
         {
-            NavigationPresenter.Navigate(pageType);
+            NavigationPresenter.Navigate(pageType, parameter);
         }
     }
 

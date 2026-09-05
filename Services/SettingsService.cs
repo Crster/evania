@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Evania.Models;
@@ -84,6 +86,14 @@ public static partial class SettingsService
             AutoSaveScreenshot = settings.AutoSaveScreenshot,
             ChatProvider = settings.ChatProvider,
             NoteSort = settings.NoteSort,
+            Bookmarks = settings.Bookmarks
+                .Where(b => !string.IsNullOrWhiteSpace(b.Url))
+                .Select(b => new BookmarkDto
+                {
+                    Title = b.Title,
+                    Url = b.Url,
+                })
+                .ToList(),
         };
 
         try
@@ -136,6 +146,14 @@ public static partial class SettingsService
         settings.AutoSaveScreenshot = dto.AutoSaveScreenshot;
         settings.ChatProvider = dto.ChatProvider;
         settings.NoteSort = dto.NoteSort;
+        settings.Bookmarks = dto.Bookmarks?
+            .Where(b => !string.IsNullOrWhiteSpace(b.Url))
+            .Select(b => new WebBookmark
+            {
+                Title = b.Title?.Trim() ?? string.Empty,
+                Url = b.Url.Trim(),
+            })
+            .ToList() ?? [];
     }
 
     private sealed class SettingsDto
@@ -155,6 +173,15 @@ public static partial class SettingsService
         public ChatProvider ChatProvider { get; set; }
 
         public NoteSortOrder NoteSort { get; set; }
+
+        public List<BookmarkDto>? Bookmarks { get; set; }
+    }
+
+    private sealed class BookmarkDto
+    {
+        public string? Title { get; set; }
+
+        public string Url { get; set; } = string.Empty;
     }
 
     [JsonSourceGenerationOptions(WriteIndented = true)]

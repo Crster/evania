@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Evania.Models;
 
@@ -57,6 +58,16 @@ public static class ChatProviderExtensions
 }
 
 /// <summary>
+/// One webpage bookmark the user pinned from Settings.
+/// </summary>
+public sealed class WebBookmark
+{
+    public string Title { get; set; } = string.Empty;
+
+    public string Url { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// Everything the Settings page edits, live.
 ///
 /// The view model binds straight to this instance rather than mirroring the values, so a change
@@ -99,6 +110,12 @@ public partial class AppSettings : ObservableObject
     /// </summary>
     [ObservableProperty]
     public partial NoteSortOrder NoteSort { get; set; } = NoteSortOrder.UpdatedDescending;
+
+    /// <summary>
+    /// Webpages pinned from Settings and surfaced in the sidebar.
+    /// </summary>
+    [ObservableProperty]
+    public partial List<WebBookmark> Bookmarks { get; set; } = [];
 
     /// <summary>
     /// The master password loaded from Windows Credential Manager for this session, or null while

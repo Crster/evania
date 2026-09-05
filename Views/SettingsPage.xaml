@@ -5,6 +5,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:Evania.ViewModels"
+    xmlns:services="using:Evania.Services"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:converters="using:Evania.Converters"
@@ -328,6 +329,65 @@
                             DisplayMemberPath="Display"
                             SelectionChanged="ChatProvider_SelectionChanged" />
                     </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ==================== Web Bookmarks ==================== -->
+
+            <TextBlock x:Name="WebBookmarksHeader" Text="Web Bookmarks" Style="{StaticResource SectionHeader}" />
+
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel Spacing="14">
+                    <TextBlock x:Name="BookmarkTitleLabel" Text="Title" Style="{StaticResource SettingTitle}" />
+                    <TextBox
+                        Text="{x:Bind ViewModel.NewBookmarkTitle, Mode=TwoWay}"
+                        PlaceholderText="Optional"
+                        Height="36"
+                        VerticalContentAlignment="Center" />
+
+                    <TextBlock x:Name="BookmarkUrlLabel" Text="URL" Style="{StaticResource SettingTitle}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <TextBox
+                            Text="{x:Bind ViewModel.NewBookmarkUrl, Mode=TwoWay}"
+                            PlaceholderText="https://example.com"
+                            Height="36"
+                            VerticalContentAlignment="Center" />
+                        <Button
+                            Grid.Column="1"
+                            Content="Add"
+                            Style="{StaticResource AccentButtonStyle}"
+                            MinWidth="100"
+                            Height="32"
+                            IsEnabled="{x:Bind ViewModel.CanAddBookmark, Mode=OneWay}"
+                            Click="AddBookmark_Click" />
+                    </Grid>
+
+                    <Line Style="{StaticResource RowDivider}" />
+
+                    <TextBlock x:Name="SavedBookmarksTitle" Text="Saved bookmarks" Style="{StaticResource SettingTitle}" />
+                    <ListView
+                        ItemsSource="{x:Bind ViewModel.Bookmarks, Mode=OneWay}"
+                        SelectionMode="None"
+                        IsItemClickEnabled="False"
+                        MaxHeight="240">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="services:WebBookmark">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="4,6">
+                                    <FontIcon Glyph="&#xE71B;" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind Url}" FontSize="12" Opacity="0.7" TextWrapping="WrapWholeWords" />
+                                    </StackPanel>
+                                    <Button
+                                        Grid.Column="2"
+                                        Content="Remove"
+                                        Tag="{x:Bind}"
+                                        Style="{StaticResource ActionButton}"
+                                        Click="RemoveBookmark_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
                 </StackPanel>
             </Border>
         </StackPanel>

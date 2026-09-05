@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -46,6 +47,32 @@ namespace Evania.ViewModels
             new ChatProviderOption(ChatProvider.ChatGPT, ChatProvider.ChatGPT.ToDisplayString()),
             new ChatProviderOption(ChatProvider.Claude, ChatProvider.Claude.ToDisplayString()),
         ];
+
+        public ObservableCollection<WebBookmark> Bookmarks { get; } = [];
+
+        private string newBookmarkTitle = string.Empty;
+
+        public string NewBookmarkTitle
+        {
+            get => newBookmarkTitle;
+            set => SetProperty(ref newBookmarkTitle, value);
+        }
+
+        private string newBookmarkUrl = string.Empty;
+
+        public string NewBookmarkUrl
+        {
+            get => newBookmarkUrl;
+            set
+            {
+                if (SetProperty(ref newBookmarkUrl, value))
+                {
+                    OnPropertyChanged(nameof(CanAddBookmark));
+                }
+            }
+        }
+
+        public bool CanAddBookmark => !string.IsNullOrWhiteSpace(NewBookmarkUrl);
 
         /// <summary>The path typed into the box, which may differ from the live one until Apply.</summary>
         [ObservableProperty]
@@ -105,6 +132,11 @@ namespace Evania.ViewModels
                 {
                     OnPropertyChanged(nameof(StartsHiddenInTray));
                 }
+
+                if (e.PropertyName == nameof(AppSettings.Bookmarks))
+                {
+                    SyncBookmarksFromSettings();
+                }
             };
 
             RefreshStatus();
@@ -126,6 +158,9 @@ namespace Evania.ViewModels
             stagingHotkey = false;
 
             SelectedChatProviderOption = ChatProviderOptions.FirstOrDefault(o => o.Value == Settings.ChatProvider) ?? ChatProviderOptions[0];
+            SyncBookmarksFromSettings();
+            NewBookmarkTitle = string.Empty;
+            NewBookmarkUrl = string.Empty;
         }
 
         public bool HasError => ErrorMessage.Length > 0;
@@ -268,6 +303,60 @@ namespace Evania.ViewModels
         /// </summary>
         public void SetChatProvider(ChatProvider provider) => Settings.ChatProvider = provider;
 
+        public bool AddBookmark()
+        {
+            string candidateUrl = NewBookmarkUrl.Trim();
+
+            if (!TryNormalizeBookmarkUrl(candidateUrl, out string? normalizedUrl))
+            {
+                ErrorMessage = "Enter a valid http or https URL.";
+                return false;
+            }
+
+            if (Settings.Bookmarks.Any(b => string.Equals(b.Url, normalizedUrl, StringComparison.OrdinalIgnoreCase)))
+            {
+                ErrorMessage = "That webpage is already in your bookmarks.";
+                return false;
+            }
+
+            string title = string.IsNullOrWhiteSpace(NewBookmarkTitle)
+                ? GetBookmarkFallbackTitle(normalizedUrl)
+                : NewBookmarkTitle.Trim();
+
+            Settings.Bookmarks =
+            [
+                ..Settings.Bookmarks.Select(b => new WebBookmark
+                {
+                    Title = b.Title,
+                    Url = b.Url,
+                }),
+                new WebBookmark
+                {
+                    Title = title,
+                    Url = normalizedUrl,
+                }
+            ];
+
+            NewBookmarkTitle = string.Empty;
+            NewBookmarkUrl = string.Empty;
+            ErrorMessage = string.Empty;
+            return true;
+        }
+
+        public void RemoveBookmark(WebBookmark bookmark)
+        {
+            Settings.Bookmarks = Settings.Bookmarks
+                .Where(b => !string.Equals(b.Url, bookmark.Url, StringComparison.OrdinalIgnoreCase))
+                .Select(b => new WebBookmark
+                {
+                    Title = b.Title,
+                    Url = b.Url,
+                })
+                .ToList();
+
+            ErrorMessage = string.Empty;
+        }
+
         public void SetShortcut(ScreenshotHotkey hotkey)
         {
             string? error = GlobalHotkeyService.Apply(hotkey);
@@ -298,6 +387,58 @@ namespace Evania.ViewModels
 
             OnPropertyChanged(nameof(NeedsApply));
             OnPropertyChanged(nameof(ApplyIsEnabled));
+        }
+
+        private void SyncBookmarksFromSettings()
+        {
+            Bookmarks.Clear();
+
+            foreach (WebBookmark bookmark in Settings.Bookmarks)
+            {
+                if (!TryNormalizeBookmarkUrl(bookmark.Url, out string? normalizedUrl))
+                {
+                    continue;
+                }
+
+                string title = string.IsNullOrWhiteSpace(bookmark.Title)
+                    ? GetBookmarkFallbackTitle(normalizedUrl)
+                    : bookmark.Title.Trim();
+
+                Bookmarks.Add(new WebBookmark
+                {
+                    Title = title,
+                    Url = normalizedUrl,
+                });
+            }
+        }
+
+        private static string GetBookmarkFallbackTitle(string url)
+        {
+            if (Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && !string.IsNullOrWhiteSpace(uri.Host))
+            {
+                return uri.Host;
+            }
+
+            return url;
+        }
+
+        private static bool TryNormalizeBookmarkUrl(string value, out string? normalizedUrl)
+        {
+            normalizedUrl = null;
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                return false;
+            }
+
+            normalizedUrl = uri.AbsoluteUri;
+            return true;
         }
     }
 }

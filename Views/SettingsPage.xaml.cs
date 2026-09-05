@@ -43,7 +43,6 @@ public sealed partial class SettingsPage : Page
         "ShortcutTitle",
         "AutoSaveTitle",
         "ProviderTitle",
-        "BookmarkTitleLabel",
         "BookmarkUrlLabel",
         "SavedBookmarksTitle",
 
@@ -54,7 +53,8 @@ public sealed partial class SettingsPage : Page
         "CloseToTraySubtitle",
         "ShortcutSubtitle",
         "AutoSaveSubtitle",
-        "ProviderSubtitle"
+        "ProviderSubtitle",
+        "BookmarkUrlSubtitle"
     ];
 
     private TextBlock[] settingLabels = [];
@@ -252,9 +252,9 @@ public sealed partial class SettingsPage : Page
         ViewModel.SetChatProvider(option.Value);
     }
 
-    private void AddBookmark_Click(object sender, RoutedEventArgs e)
+    private async void AddBookmark_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.AddBookmark();
+        await ViewModel.AddBookmarkAsync();
     }
 
     private void RemoveBookmark_Click(object sender, RoutedEventArgs e)

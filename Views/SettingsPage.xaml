@@ -338,17 +338,14 @@
 
             <Border Style="{StaticResource SectionCard}">
                 <StackPanel Spacing="14">
-                    <TextBlock x:Name="BookmarkTitleLabel" Text="Title" Style="{StaticResource SettingTitle}" />
-                    <TextBox
-                        Text="{x:Bind ViewModel.NewBookmarkTitle, Mode=TwoWay}"
-                        PlaceholderText="Optional"
-                        Height="36"
-                        VerticalContentAlignment="Center" />
-
                     <TextBlock x:Name="BookmarkUrlLabel" Text="URL" Style="{StaticResource SettingTitle}" />
+                    <TextBlock
+                        x:Name="BookmarkUrlSubtitle"
+                        Text="Paste a website link. Evania grabs the page title automatically."
+                        Style="{StaticResource SettingSubtitle}" />
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                         <TextBox
-                            Text="{x:Bind ViewModel.NewBookmarkUrl, Mode=TwoWay}"
+                            Text="{x:Bind ViewModel.NewBookmarkUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                             PlaceholderText="https://example.com"
                             Height="36"
                             VerticalContentAlignment="Center" />
@@ -364,7 +361,11 @@
 
                     <Line Style="{StaticResource RowDivider}" />
 
-                    <TextBlock x:Name="SavedBookmarksTitle" Text="Saved bookmarks" Style="{StaticResource SettingTitle}" />
+                    <TextBlock
+                        x:Name="SavedBookmarksTitle"
+                        Text="Saved bookmarks"
+                        Style="{StaticResource SettingTitle}"
+                        Visibility="{x:Bind ViewModel.HasBookmarks, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                     <ListView
                         ItemsSource="{x:Bind ViewModel.Bookmarks, Mode=OneWay}"
                         SelectionMode="None"

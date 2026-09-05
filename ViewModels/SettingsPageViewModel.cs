@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -48,15 +51,14 @@ namespace Evania.ViewModels
             new ChatProviderOption(ChatProvider.Claude, ChatProvider.Claude.ToDisplayString()),
         ];
 
-        public ObservableCollection<WebBookmark> Bookmarks { get; } = [];
-
-        private string newBookmarkTitle = string.Empty;
-
-        public string NewBookmarkTitle
+        private static readonly HttpClient BookmarkTitleHttpClient = new()
         {
-            get => newBookmarkTitle;
-            set => SetProperty(ref newBookmarkTitle, value);
-        }
+            Timeout = TimeSpan.FromSeconds(8)
+        };
+
+        private static readonly Regex HtmlTitleRegex = new("<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
+
+        public ObservableCollection<WebBookmark> Bookmarks { get; } = [];
 
         private string newBookmarkUrl = string.Empty;
 
@@ -72,7 +74,23 @@ namespace Evania.ViewModels
             }
         }
 
-        public bool CanAddBookmark => !string.IsNullOrWhiteSpace(NewBookmarkUrl);
+        private bool isAddingBookmark;
+
+        public bool IsAddingBookmark
+        {
+            get => isAddingBookmark;
+            private set
+            {
+                if (SetProperty(ref isAddingBookmark, value))
+                {
+                    OnPropertyChanged(nameof(CanAddBookmark));
+                }
+            }
+        }
+
+        public bool CanAddBookmark => !IsAddingBookmark && !string.IsNullOrWhiteSpace(NewBookmarkUrl);
+
+        public bool HasBookmarks => Bookmarks.Count > 0;
 
         /// <summary>The path typed into the box, which may differ from the live one until Apply.</summary>
         [ObservableProperty]
@@ -159,7 +177,6 @@ namespace Evania.ViewModels
 
             SelectedChatProviderOption = ChatProviderOptions.FirstOrDefault(o => o.Value == Settings.ChatProvider) ?? ChatProviderOptions[0];
             SyncBookmarksFromSettings();
-            NewBookmarkTitle = string.Empty;
             NewBookmarkUrl = string.Empty;
         }
 
@@ -303,8 +320,13 @@ namespace Evania.ViewModels
         /// </summary>
         public void SetChatProvider(ChatProvider provider) => Settings.ChatProvider = provider;
 
-        public bool AddBookmark()
+        public async Task<bool> AddBookmarkAsync()
         {
+            if (IsAddingBookmark)
+            {
+                return false;
+            }
+
             string candidateUrl = NewBookmarkUrl.Trim();
 
             if (!TryNormalizeBookmarkUrl(candidateUrl, out string? normalizedUrl))
@@ -319,28 +341,34 @@ namespace Evania.ViewModels
                 return false;
             }
 
-            string title = string.IsNullOrWhiteSpace(NewBookmarkTitle)
-                ? GetBookmarkFallbackTitle(normalizedUrl)
-                : NewBookmarkTitle.Trim();
+            IsAddingBookmark = true;
 
-            Settings.Bookmarks =
-            [
-                ..Settings.Bookmarks.Select(b => new WebBookmark
-                {
-                    Title = b.Title,
-                    Url = b.Url,
-                }),
-                new WebBookmark
-                {
-                    Title = title,
-                    Url = normalizedUrl,
-                }
-            ];
+            try
+            {
+                string title = await GetBookmarkTitleFromWebsiteAsync(normalizedUrl) ?? GetBookmarkFallbackTitle(normalizedUrl);
 
-            NewBookmarkTitle = string.Empty;
-            NewBookmarkUrl = string.Empty;
-            ErrorMessage = string.Empty;
-            return true;
+                Settings.Bookmarks =
+                [
+                    ..Settings.Bookmarks.Select(b => new WebBookmark
+                    {
+                        Title = b.Title,
+                        Url = b.Url,
+                    }),
+                    new WebBookmark
+                    {
+                        Title = title,
+                        Url = normalizedUrl,
+                    }
+                ];
+
+                NewBookmarkUrl = string.Empty;
+                ErrorMessage = string.Empty;
+                return true;
+            }
+            finally
+            {
+                IsAddingBookmark = false;
+            }
         }
 
         public void RemoveBookmark(WebBookmark bookmark)
@@ -409,6 +437,45 @@ namespace Evania.ViewModels
                     Title = title,
                     Url = normalizedUrl,
                 });
+            }
+
+            OnPropertyChanged(nameof(HasBookmarks));
+        }
+
+        private static async Task<string?> GetBookmarkTitleFromWebsiteAsync(string url)
+        {
+            try
+            {
+                using HttpRequestMessage request = new(HttpMethod.Get, url);
+                request.Headers.TryAddWithoutValidation("User-Agent", "Evania/1.0");
+
+                using HttpResponseMessage response = await BookmarkTitleHttpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                string html = await response.Content.ReadAsStringAsync();
+                Match titleMatch = HtmlTitleRegex.Match(html);
+
+                if (!titleMatch.Success)
+                {
+                    return null;
+                }
+
+                string title = WebUtility.HtmlDecode(titleMatch.Groups[1].Value).Trim();
+
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    return null;
+                }
+
+                return Regex.Replace(title, "\\s+", " ");
+            }
+            catch
+            {
+                return null;
             }
         }
 

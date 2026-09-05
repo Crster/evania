@@ -62,9 +62,8 @@ public sealed partial class NotePage : Page
         {
             return await NoteService.ReadAttachmentAsync(id);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Editor image load failed for '{id}': {ex.Message}");
             return null;
         }
     }
@@ -490,9 +489,8 @@ public sealed partial class NotePage : Page
             StorageFile file = await CreateTempFileAsync(fileName, bytes);
             await global::Windows.System.Launcher.LaunchFileAsync(file);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Attachment open failed for '{id}': {ex.Message}");
         }
     }
 

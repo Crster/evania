@@ -29,10 +29,8 @@ public static class AutoStartService
 
             return task.State;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Startup task unavailable: {ex.Message}");
-
             return null;
         }
     }

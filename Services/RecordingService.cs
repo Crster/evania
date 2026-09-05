@@ -95,11 +95,10 @@ namespace Evania.Services
                 await image.SetSourceAsync(poster);
                 return image;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // The shell throws rather than returning nothing for a video it cannot decode
                 // yet, which is the normal state for a file recorded seconds ago.
-                System.Diagnostics.Debug.WriteLine($"No poster frame for {filePath}: {ex.Message}");
                 return null;
             }
         }

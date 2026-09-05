@@ -41,8 +41,7 @@ public sealed partial class ChatPage : Page
 
         initializing = true;
 
-        CoreWebView2Environment environment = await CoreWebView2Environment.CreateWithOptionsAsync(
-            null, SettingsService.ChatDataFolder, null);
+        CoreWebView2Environment environment = await SettingsService.GetChatWebViewEnvironmentAsync();
 
         await ChatBrowser.EnsureCoreWebView2Async(environment);
 

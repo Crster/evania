@@ -78,9 +78,8 @@ public static class CaptureFlowService
                 WeakReferenceMessenger.Default.Send(new ScreenshotCapturedMessage(image, null, result.Bitmap));
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Capture failed: {ex.Message}");
         }
         finally
         {

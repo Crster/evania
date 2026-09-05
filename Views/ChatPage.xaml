@@ -9,6 +9,7 @@
     mc:Ignorable="d"
     d:DataContext="{d:DesignInstance Type=vm:ChatPageViewModel}"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    NavigationCacheMode="Required"
     Loaded="ChatPage_Loaded"
     Unloaded="ChatPage_Unloaded">
 

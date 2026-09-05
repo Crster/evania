@@ -295,7 +295,6 @@ public sealed partial class PasswordPage : Page
         int scanStatusShown = 0;
         bool codeApplied = false;
 
-        System.Diagnostics.Debug.WriteLine("TOTP QR scanner: opening scanner dialog.");
         camera.BitmapChanged += () => preview.Source = camera.Bitmap;
         camera.FrameReceived += (pixels, width, height) =>
         {
@@ -314,7 +313,6 @@ public sealed partial class PasswordPage : Page
 
                 if (attempt == 1 || attempt % 30 == 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"TOTP QR scanner: decode attempt {attempt} ({width}x{height}).");
                 }
 
                 Result? result = reader.Decode(new RGBLuminanceSource(
@@ -329,7 +327,6 @@ public sealed partial class PasswordPage : Page
 
                 bool isValidTotp = TotpService.TryParseSecret(text, out _, out _, out _);
                 bool isOtpAuthUri = text.StartsWith("otpauth://", StringComparison.OrdinalIgnoreCase);
-                System.Diagnostics.Debug.WriteLine($"TOTP QR scanner: QR decoded (length {text.Length}); valid TOTP: {isValidTotp}; direct otpauth URI: {isOtpAuthUri}.");
 
                 if (isValidTotp)
                 {
@@ -343,9 +340,6 @@ public sealed partial class PasswordPage : Page
                         codeApplied = true;
                         ViewModel.EditTotpSecret = text;
                         status.Text = "Authenticator QR code detected.";
-                        System.Diagnostics.Debug.WriteLine(isOtpAuthUri
-                            ? "TOTP QR scanner: valid otpauth configuration applied."
-                            : "TOTP QR scanner: valid Base32 configuration applied.");
                         dialog.Hide();
                     });
                 }
@@ -355,9 +349,8 @@ public sealed partial class PasswordPage : Page
                         status.Text = "QR code found, but it is not a valid TOTP setup code. Try another code.");
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"QR scan failed: {ex.Message}");
             }
             finally
             {
@@ -371,7 +364,6 @@ public sealed partial class PasswordPage : Page
             if (cameraError is not null)
             {
                 status.Text = cameraError;
-                System.Diagnostics.Debug.WriteLine($"TOTP QR scanner: camera unavailable: {cameraError}");
             }
             else
             {
@@ -382,7 +374,6 @@ public sealed partial class PasswordPage : Page
         }
         finally
         {
-            System.Diagnostics.Debug.WriteLine($"TOTP QR scanner: closing after {decodeAttemptCount} decode attempts.");
             await camera.StopAsync();
             camera.Dispose();
         }

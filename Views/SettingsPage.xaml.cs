@@ -177,9 +177,8 @@ public sealed partial class SettingsPage : Page
                 picker.SuggestedSaveFile = await StorageFile.GetFileFromPathAsync(ViewModel.CandidatePath);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Picker could not start at the current path: {ex.Message}");
         }
 
         WinRT.Interop.InitializeWithWindow.Initialize(

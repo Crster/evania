@@ -4,7 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Evania.Models;
+using Microsoft.Web.WebView2.Core;
+using Windows.Foundation;
 
 namespace Evania.Services;
 
@@ -32,7 +35,15 @@ public static partial class SettingsService
     /// </summary>
     public static string ChatDataFolder => Path.Combine(RootDirectory, "chat-webview");
 
+    private static readonly Lazy<Task<CoreWebView2Environment>> lazyChatEnvironment =
+        new(CreateChatWebViewEnvironmentAsync);
+
     private static readonly Lazy<AppSettings> lazyCurrent = new(CreateAndLoad);
+
+    public static Task<CoreWebView2Environment> GetChatWebViewEnvironmentAsync() => lazyChatEnvironment.Value;
+
+    private static Task<CoreWebView2Environment> CreateChatWebViewEnvironmentAsync() =>
+        CoreWebView2Environment.CreateWithOptionsAsync(null, ChatDataFolder, null).AsTask();
 
     public static AppSettings Current => lazyCurrent.Value;
 
@@ -47,11 +58,10 @@ public static partial class SettingsService
             loading = true;
             Read(settings);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // A settings file we cannot parse is a reason to start from defaults, not a reason not
             // to start at all.
-            System.Diagnostics.Debug.WriteLine($"Failed to read {FilePath}: {ex.Message}");
         }
         finally
         {
@@ -112,9 +122,8 @@ public static partial class SettingsService
                 File.Move(tempPath, FilePath);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
         }
     }
 

@@ -75,11 +75,10 @@ public static class CopilotKeyService
             subclassProc = HandleMessage;
             NativeMethods.SetWindowSubclass(hWnd, subclassProc, IntPtr.Zero, IntPtr.Zero);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // URI activation still works when the fast path cannot be set up; the key just takes the
             // slower route. That is a degradation, not a reason to fail the launch.
-            System.Diagnostics.Debug.WriteLine($"Copilot fast path registration failed: {ex.Message}");
         }
     }
 

@@ -77,7 +77,6 @@ namespace Evania.Services
                     MemoryPreference = MediaCaptureMemoryPreference.Cpu,
                 };
                 await capture.InitializeAsync(settings);
-                System.Diagnostics.Debug.WriteLine("CameraPreview: camera initialized.");
 
                 MediaFrameSource? source =
                     capture.FrameSources.Values.FirstOrDefault(s => s.Info.SourceKind == MediaFrameSourceKind.Color) ??
@@ -92,7 +91,6 @@ namespace Evania.Services
                 reader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
                 reader.FrameArrived += Reader_FrameArrived;
                 await reader.StartAsync();
-                System.Diagnostics.Debug.WriteLine("CameraPreview: frame reader started.");
             }
             catch (Exception ex)
             {
@@ -102,7 +100,6 @@ namespace Evania.Services
                     reader.Dispose();
                 }
                 capture.Dispose();
-                System.Diagnostics.Debug.WriteLine($"CameraPreview: startup failed: {ex.Message}");
                 return ex.Message;
             }
 
@@ -131,7 +128,6 @@ namespace Evania.Services
             }
 
             capture?.Dispose();
-            System.Diagnostics.Debug.WriteLine("CameraPreview: camera stopped.");
         }
 
         private void Reader_FrameArrived(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
@@ -141,9 +137,8 @@ namespace Evania.Services
             {
                 bitmap = ReadFrame(sender);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"Camera frame failed: {ex.Message}");
                 return;
             }
 
@@ -155,7 +150,6 @@ namespace Evania.Services
             int frameCount = Interlocked.Increment(ref _frameCount);
             if (frameCount == 1 || frameCount % 60 == 0)
             {
-                System.Diagnostics.Debug.WriteLine($"CameraPreview: frame {frameCount} received ({bitmap.PixelWidth}x{bitmap.PixelHeight}).");
             }
 
             try
@@ -171,13 +165,11 @@ namespace Evania.Services
 
                     if (frameCount == 1 || frameCount % 60 == 0)
                     {
-                        System.Diagnostics.Debug.WriteLine($"CameraPreview: frame {frameCount} delivered to scanner.");
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"Camera frame handler failed: {ex.Message}");
             }
 
             DispatcherQueue? queue = _queue;

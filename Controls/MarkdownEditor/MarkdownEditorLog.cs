@@ -24,12 +24,6 @@ internal static class MarkdownEditorLog
     [Conditional("DEBUG")]
     internal static void Write(string message, [CallerMemberName] string caller = "")
     {
-        if (!IsEnabled)
-        {
-            return;
-        }
-
-        Debug.WriteLine($"[{Category}] {caller}: {message}");
     }
 
     [Conditional("DEBUG")]
@@ -44,7 +38,8 @@ internal static class MarkdownEditorLog
 
     [Conditional("DEBUG")]
     internal static void Viewport(string message, [CallerMemberName] string caller = "")
-        => Debug.WriteLine($"[{Category}.Viewport] {caller}: {message}");
+    {
+    }
 
     /// <summary>Shortens and escapes user text so a paste of a whole note cannot flood the log.</summary>
     internal static string Snippet(string? text, int maxLength = 40)

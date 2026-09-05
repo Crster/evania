@@ -1445,10 +1445,9 @@ public sealed partial class EditScreenshotWindow : Window
 
             EditedBitmap = CropToContent(rendered);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // The result is already claimed, so leaving the window open here would strand it.
-            System.Diagnostics.Debug.WriteLine($"Edit action failed: {ex.Message}");
         }
         finally
         {
@@ -1467,10 +1466,9 @@ public sealed partial class EditScreenshotWindow : Window
             EditedBitmap = await RenderEditedBitmapAsync();
             SavedFilePath = await ScreenshotService.SaveScreenshotAsync(EditedBitmap);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // The edited image survives as an unsaved item, so the list can offer Save again.
-            System.Diagnostics.Debug.WriteLine($"Save failed: {ex.Message}");
         }
         finally
         {

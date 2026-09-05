@@ -450,9 +450,8 @@ public static class DatabaseService
         {
             engine.Checkpoint();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Checkpoint before closing failed: {ex.Message}");
         }
 
         engine.Dispose();

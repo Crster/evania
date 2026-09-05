@@ -96,6 +96,10 @@ public partial class App : Application
         // reads from it yet, so it is not a reason to delay showing the first frame.
         _ = Task.Run(DatabaseService.OpenFromSettings);
 
+        // Warm the chat browser environment in the background so the first trip to Chat has less work
+        // to do without forcing the page itself to load before it is needed.
+        _ = SettingsService.GetChatWebViewEnvironmentAsync();
+
         if (startsHiddenInTray)
         {
             // Deliberately never activated: a window that was never shown cannot flicker, which is
@@ -128,11 +132,10 @@ public partial class App : Application
 
             return true;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // The copy we were handing over to may have quit mid-handoff. Stay and be the main one
             // rather than leaving the user with no app at all.
-            System.Diagnostics.Debug.WriteLine($"Activation redirect failed: {ex.Message}");
 
             return false;
         }

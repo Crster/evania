@@ -43,7 +43,6 @@ public static class TrayIconService
         {
             // A missing icon is a deployment issue, not a reason to kill the app at startup. Let the
             // Settings page report the toggle failure through IsShowing while the window stays usable.
-            System.Diagnostics.Debug.WriteLine("Tray icon file could not be loaded; tray disabled.");
             return;
         }
 
@@ -71,9 +70,8 @@ public static class TrayIconService
             // Efficiency mode stays off so the icon is present rather than summoned on demand.
             taskbar.ForceCreate(enablesEfficiencyMode: false);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Tray icon could not be created: {ex.Message}");
             taskbar.Dispose();
             return;
         }
@@ -135,9 +133,8 @@ public static class TrayIconService
                 false,
                 null);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Balloon tip failed: {ex.Message}");
         }
     }
 
@@ -181,9 +178,8 @@ public static class TrayIconService
                 ? new System.Drawing.Icon(WindowIconService.IconPath, 32, 32)
                 : null;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Tray icon did not load: {ex.Message}");
             return null;
         }
     }

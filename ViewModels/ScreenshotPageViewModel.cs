@@ -146,9 +146,8 @@ namespace Evania.ViewModels
                 item.AdoptSavedFile(image, savedPath);
                 LastSavedPath = savedPath;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to open edit window: {ex.Message}");
             }
         }
 

@@ -23,6 +23,12 @@ public sealed partial class ChatPage : Page
     /// profile folder before this code could steer it to the shared one.
     /// </summary>
     private bool initializing;
+    private bool coreEventsAttached;
+    private bool canGoBack;
+
+    public event EventHandler? BrowserNavigationStateChanged;
+
+    public bool CanGoBackInBrowser => ChatBrowser.CanGoBack;
 
     public ChatPage()
     {
@@ -37,7 +43,9 @@ public sealed partial class ChatPage : Page
 
         if (ChatBrowser.CoreWebView2 is not null)
         {
+            AttachCoreWebView2Events();
             SyncChatSource();
+            UpdateNavigationState();
             return;
         }
 
@@ -51,6 +59,7 @@ public sealed partial class ChatPage : Page
         CoreWebView2Environment environment = await SettingsService.GetChatWebViewEnvironmentAsync();
 
         await ChatBrowser.EnsureCoreWebView2Async(environment);
+        AttachCoreWebView2Events();
 
         // Match the window's backdrop so the content arriving does not flash white (or black)
         // against it first.
@@ -59,11 +68,13 @@ public sealed partial class ChatPage : Page
             : global::Windows.UI.Color.FromArgb(0xFF, 0xF3, 0xF3, 0xF3);
 
         SyncChatSource();
+        UpdateNavigationState();
     }
 
     private void ChatPage_Unloaded(object sender, RoutedEventArgs e)
     {
         SettingsService.Current.PropertyChanged -= Settings_PropertyChanged;
+        DetachCoreWebView2Events();
     }
 
     /// <summary>
@@ -86,5 +97,63 @@ public sealed partial class ChatPage : Page
         {
             ChatBrowser.Source = target;
         }
+    }
+
+    public bool TryGoBackInBrowser()
+    {
+        if (!ChatBrowser.CanGoBack)
+        {
+            return false;
+        }
+
+        ChatBrowser.GoBack();
+        return true;
+    }
+
+    private void AttachCoreWebView2Events()
+    {
+        if (coreEventsAttached || ChatBrowser.CoreWebView2 is not CoreWebView2 core)
+        {
+            return;
+        }
+
+        core.HistoryChanged += CoreWebView2_HistoryChanged;
+        core.NavigationCompleted += CoreWebView2_NavigationCompleted;
+        coreEventsAttached = true;
+    }
+
+    private void DetachCoreWebView2Events()
+    {
+        if (!coreEventsAttached || ChatBrowser.CoreWebView2 is not CoreWebView2 core)
+        {
+            return;
+        }
+
+        core.HistoryChanged -= CoreWebView2_HistoryChanged;
+        core.NavigationCompleted -= CoreWebView2_NavigationCompleted;
+        coreEventsAttached = false;
+    }
+
+    private void CoreWebView2_HistoryChanged(object? sender, object e)
+    {
+        UpdateNavigationState();
+    }
+
+    private void CoreWebView2_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        UpdateNavigationState();
+    }
+
+    private void UpdateNavigationState()
+    {
+        bool nextCanGoBack = ChatBrowser.CanGoBack;
+
+        if (nextCanGoBack == canGoBack)
+        {
+            return;
+        }
+
+        canGoBack = nextCanGoBack;
+        BrowserNavigationStateChanged?.Invoke(this, EventArgs.Empty);
     }
 }

@@ -15,9 +15,22 @@ public sealed partial class BookmarkPage : Page
 {
     private bool initializing;
     private bool pageReady;
+    private bool coreEventsAttached;
+    private bool canGoBack;
     private Uri? pendingUri;
     private Uri? currentUri;
     private string pendingSearchText = string.Empty;
+    private string currentDocumentTitle = string.Empty;
+    private bool isDocumentPlayingAudio;
+
+    public event EventHandler? TrayMediaStateChanged;
+    public event EventHandler? BrowserNavigationStateChanged;
+
+    public bool CanGoBackInBrowser => BookmarkBrowser.CanGoBack;
+
+    public string? ActiveMediaTitle => isDocumentPlayingAudio
+        ? NormalizeTitle(currentDocumentTitle)
+        : null;
 
     public BookmarkPage()
     {
@@ -42,6 +55,7 @@ public sealed partial class BookmarkPage : Page
         }
 
         BookmarkBrowser.NavigationCompleted += BookmarkBrowser_NavigationCompleted;
+        AttachCoreWebView2Events();
 
         if (initializing || BookmarkBrowser.CoreWebView2 is not null)
         {
@@ -55,6 +69,8 @@ public sealed partial class BookmarkPage : Page
             if (BookmarkBrowser.CoreWebView2 is not null && pendingUri is null)
             {
                 pageReady = true;
+                UpdateMediaStateFromBrowser();
+                UpdateNavigationState();
                 await ApplySearchAsync(pendingSearchText);
             }
 
@@ -66,6 +82,7 @@ public sealed partial class BookmarkPage : Page
         CoreWebView2Environment environment = await SettingsService.GetChatWebViewEnvironmentAsync();
 
         await BookmarkBrowser.EnsureCoreWebView2Async(environment);
+        AttachCoreWebView2Events();
 
         BookmarkBrowser.DefaultBackgroundColor = ActualTheme == ElementTheme.Dark
             ? global::Windows.UI.Color.FromArgb(0xFF, 0x20, 0x20, 0x20)
@@ -82,6 +99,7 @@ public sealed partial class BookmarkPage : Page
         }
 
         BookmarkBrowser.NavigationCompleted -= BookmarkBrowser_NavigationCompleted;
+        DetachCoreWebView2Events();
     }
 
     private void MainWindow_TitleBarSearchChanged(object? sender, string text)
@@ -101,8 +119,30 @@ public sealed partial class BookmarkPage : Page
         if (pageReady)
         {
             currentUri = pendingUri;
+            UpdateMediaStateFromBrowser();
+            UpdateNavigationState();
             _ = ApplySearchAsync(pendingSearchText);
         }
+        else
+        {
+            ResetMediaState();
+            UpdateNavigationState();
+        }
+    }
+
+    private void CoreWebView2_DocumentTitleChanged(object? sender, object e)
+    {
+        UpdateMediaStateFromBrowser();
+    }
+
+    private void CoreWebView2_IsDocumentPlayingAudioChanged(object? sender, object e)
+    {
+        UpdateMediaStateFromBrowser();
+    }
+
+    private void CoreWebView2_HistoryChanged(object? sender, object e)
+    {
+        UpdateNavigationState();
     }
 
     private async Task ApplySearchAsync(string? searchText = null)
@@ -196,7 +236,103 @@ public sealed partial class BookmarkPage : Page
         if (pendingUri is not null && BookmarkBrowser.CoreWebView2 is not null)
         {
             pageReady = false;
+            ResetMediaState();
+            UpdateNavigationState();
             BookmarkBrowser.Source = pendingUri;
         }
+    }
+
+    private void AttachCoreWebView2Events()
+    {
+        if (coreEventsAttached || BookmarkBrowser.CoreWebView2 is not CoreWebView2 core)
+        {
+            return;
+        }
+
+        core.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
+        core.IsDocumentPlayingAudioChanged += CoreWebView2_IsDocumentPlayingAudioChanged;
+        core.HistoryChanged += CoreWebView2_HistoryChanged;
+        coreEventsAttached = true;
+        UpdateMediaStateFromBrowser();
+        UpdateNavigationState();
+    }
+
+    private void DetachCoreWebView2Events()
+    {
+        if (!coreEventsAttached || BookmarkBrowser.CoreWebView2 is not CoreWebView2 core)
+        {
+            return;
+        }
+
+        core.DocumentTitleChanged -= CoreWebView2_DocumentTitleChanged;
+        core.IsDocumentPlayingAudioChanged -= CoreWebView2_IsDocumentPlayingAudioChanged;
+        core.HistoryChanged -= CoreWebView2_HistoryChanged;
+        coreEventsAttached = false;
+    }
+
+    private void UpdateMediaStateFromBrowser()
+    {
+        if (BookmarkBrowser.CoreWebView2 is not CoreWebView2 core)
+        {
+            ResetMediaState();
+            return;
+        }
+
+        string newTitle = core.DocumentTitle ?? string.Empty;
+        bool newIsDocumentPlayingAudio = core.IsDocumentPlayingAudio;
+
+        if (newTitle == currentDocumentTitle && newIsDocumentPlayingAudio == isDocumentPlayingAudio)
+        {
+            return;
+        }
+
+        currentDocumentTitle = newTitle;
+        isDocumentPlayingAudio = newIsDocumentPlayingAudio;
+        TrayMediaStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ResetMediaState()
+    {
+        if (currentDocumentTitle.Length == 0 && !isDocumentPlayingAudio)
+        {
+            return;
+        }
+
+        currentDocumentTitle = string.Empty;
+        isDocumentPlayingAudio = false;
+        TrayMediaStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public bool TryGoBackInBrowser()
+    {
+        if (!BookmarkBrowser.CanGoBack)
+        {
+            return false;
+        }
+
+        BookmarkBrowser.GoBack();
+        return true;
+    }
+
+    private void UpdateNavigationState()
+    {
+        bool nextCanGoBack = BookmarkBrowser.CanGoBack;
+
+        if (nextCanGoBack == canGoBack)
+        {
+            return;
+        }
+
+        canGoBack = nextCanGoBack;
+        BrowserNavigationStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static string? NormalizeTitle(string? title)
+    {
+        string normalized = title?.Trim() ?? string.Empty;
+
+        return normalized.Length == 0
+            ? null
+            : normalized;
     }
 }

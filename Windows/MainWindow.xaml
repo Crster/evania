@@ -29,13 +29,29 @@
                 <ImageIconSource ImageSource="/Assets/Evania.ico" />
             </TitleBar.IconSource>
             <TitleBar.Content>
-                <AutoSuggestBox
-                    x:Name="TitleBarSearchBox"
-                    Width="360"
-                    VerticalAlignment="Center"
-                    PlaceholderText="Search notes"
-                    QueryIcon="Find"
-                    TextChanged="TitleBarSearchBox_TextChanged" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button
+                        x:Name="TitleBarWebBackButton"
+                        Style="{StaticResource SubtleButtonStyle}"
+                        Width="24"
+                        Height="24"
+                        MinWidth="24"
+                        MinHeight="24"
+                        Padding="0"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed"
+                        IsEnabled="False"
+                        Click="TitleBarWebBackButton_Click">
+                        <SymbolIcon Symbol="Back" />
+                    </Button>
+                    <AutoSuggestBox
+                        x:Name="TitleBarSearchBox"
+                        Width="360"
+                        VerticalAlignment="Center"
+                        PlaceholderText="Search notes"
+                        QueryIcon="Find"
+                        TextChanged="TitleBarSearchBox_TextChanged" />
+                </StackPanel>
             </TitleBar.Content>
         </TitleBar>
 

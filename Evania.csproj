@@ -61,8 +61,13 @@
 		<AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
 		<AppxAutoIncrementPackageRevision>True</AppxAutoIncrementPackageRevision>
 		<GenerateTestArtifacts>False</GenerateTestArtifacts>
+		<UapAppxPackageBuildMode>StoreUpload</UapAppxPackageBuildMode>
 		<AppxBundle>Never</AppxBundle>
 		<AppInstallerUri>\\Installer</AppInstallerUri>
 		<HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
 	</PropertyGroup>
+
+	<Target Name="NormalizePackagedInstallerNames" AfterTargets="_AddWindowsInstallScriptToTestLayout" Condition="Exists('$(MSBuildProjectDirectory)\AppPackages')">
+		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$appPackages = Join-Path '$(MSBuildProjectDirectory)' 'AppPackages'; Get-ChildItem -LiteralPath $appPackages -Directory | Where-Object { $_.Name -like '*_Test' } | ForEach-Object { $newName = $_.Name.Substring(0, $_.Name.Length - 5); $newPath = Join-Path $_.Parent.FullName $newName; if (Test-Path -LiteralPath $newPath) { Remove-Item -LiteralPath $newPath -Recurse -Force }; Move-Item -LiteralPath $_.FullName -Destination $newPath }; Get-ChildItem -LiteralPath $appPackages -Directory | Where-Object { $_.Name -like '*_Test' } | Remove-Item -Recurse -Force; @($appPackages, (Join-Path '$(MSBuildProjectDirectory)' 'BundleArtifacts')) | Where-Object { Test-Path -LiteralPath $_ } | ForEach-Object { Get-ChildItem -LiteralPath $_ -File | Where-Object { $_.Name -like '*.appinstaller*' -or $_.Name -eq 'index.html' } | ForEach-Object { $content = Get-Content -LiteralPath $_.FullName -Raw; $updated = $content -replace '_Test/', '/'; if ($updated -ne $content) { Set-Content -LiteralPath $_.FullName -Value $updated -Encoding UTF8 } } }&quot;" />
+	</Target>
 </Project>

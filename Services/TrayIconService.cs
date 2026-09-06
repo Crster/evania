@@ -18,6 +18,8 @@ namespace Evania.Services;
 /// </summary>
 public static class TrayIconService
 {
+    private const string DefaultToolTipText = "Evania";
+
     public static bool IsShowing { get; private set; }
 
     public static event Action? OpenRequested;
@@ -25,6 +27,7 @@ public static class TrayIconService
     public static event Action? ExitRequested;
 
     private static TaskbarIcon? icon;
+    private static string currentToolTipText = DefaultToolTipText;
 
     /// <summary>Puts the icon in the tray, creating it on first use. Safe to call repeatedly.</summary>
     public static async Task ShowAsync()
@@ -52,7 +55,7 @@ public static class TrayIconService
             // BitmapImage back into a file through its UriSource - which a stream-loaded image does
             // not have, crashing startup inside GetFileFromApplicationUriAsync.
             Icon = iconImage,
-            ToolTipText = "Evania",
+            ToolTipText = currentToolTipText,
             // TaskbarIcon carries no menu property of its own - the menu it renders is the flyout it
             // inherits from FrameworkElement, which the library turns into a Win32 popup.
             ContextFlyout = BuildMenu(),
@@ -90,6 +93,22 @@ public static class TrayIconService
         icon.Dispose();
         icon = null;
         IsShowing = false;
+    }
+
+    public static void SetToolTipText(string? toolTipText)
+    {
+        string normalized = string.IsNullOrWhiteSpace(toolTipText)
+            ? DefaultToolTipText
+            : toolTipText.Trim();
+
+        currentToolTipText = normalized.Length > 63
+            ? normalized[..63]
+            : normalized;
+
+        if (icon is not null)
+        {
+            icon.ToolTipText = currentToolTipText;
+        }
     }
 
     /// <summary>

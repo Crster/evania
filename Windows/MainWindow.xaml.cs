@@ -55,6 +55,8 @@ public sealed partial class MainWindow : Window
         // The first page used to arrive through the selection binding; now the pane is the single
         // place that knows what is selected, so the opening item has to be said out loud.
         NavView.SelectedItem = ViewModel.MenuItems[0];
+        UpdateTrayToolTip("Chat");
+        RefreshWebBackButtonState();
     }
 
     /// <summary>
@@ -140,6 +142,8 @@ public sealed partial class MainWindow : Window
         {
             TitleBarSearchBox.PlaceholderText = "Search settings";
             Navigate(typeof(SettingsPage));
+            UpdateTrayToolTip("Settings");
+            RefreshWebBackButtonState();
 
             return;
         }
@@ -158,6 +162,8 @@ public sealed partial class MainWindow : Window
             string bookmarkUrl = item.Tag[MainViewModel.BookmarkTagPrefix.Length..];
             TitleBarSearchBox.PlaceholderText = "Search bookmarks";
             Navigate(typeof(BookmarkPage), bookmarkUrl);
+            UpdateTrayToolTip(item.Content, (NavigationPresenter.Content as BookmarkPage)?.ActiveMediaTitle);
+            RefreshWebBackButtonState();
             return;
         }
 
@@ -182,6 +188,8 @@ public sealed partial class MainWindow : Window
                 _ => "Search"
             };
             Navigate(pageType);
+            UpdateTrayToolTip(item.Content);
+            RefreshWebBackButtonState();
         }
     }
 
@@ -192,6 +200,8 @@ public sealed partial class MainWindow : Window
             if (!_bookmarkPages.TryGetValue(bookmarkUrl, out BookmarkPage? page))
             {
                 page = new BookmarkPage();
+                page.TrayMediaStateChanged += BookmarkPage_TrayMediaStateChanged;
+                page.BrowserNavigationStateChanged += WebPage_BrowserNavigationStateChanged;
                 _bookmarkPages[bookmarkUrl] = page;
             }
 
@@ -209,7 +219,12 @@ public sealed partial class MainWindow : Window
         {
             if (pageType == typeof(ChatPage))
             {
-                _chatPage ??= new ChatPage();
+                if (_chatPage is null)
+                {
+                    _chatPage = new ChatPage();
+                    _chatPage.BrowserNavigationStateChanged += WebPage_BrowserNavigationStateChanged;
+                }
+
                 NavigationPresenter.Content = _chatPage;
             }
             else
@@ -217,6 +232,75 @@ public sealed partial class MainWindow : Window
                 NavigationPresenter.Content = Activator.CreateInstance(pageType);
             }
         }
+    }
+
+    private void BookmarkPage_TrayMediaStateChanged(object? sender, EventArgs e)
+    {
+        if (!ReferenceEquals(NavigationPresenter.Content, sender))
+        {
+            return;
+        }
+
+        string tabTitle = NavView.SelectedItem is NavigationItemViewModel item
+            ? item.Content
+            : "Bookmark";
+
+        UpdateTrayToolTip(tabTitle, (sender as BookmarkPage)?.ActiveMediaTitle);
+    }
+
+    private void WebPage_BrowserNavigationStateChanged(object? sender, EventArgs e)
+    {
+        if (!ReferenceEquals(NavigationPresenter.Content, sender))
+        {
+            return;
+        }
+
+        RefreshWebBackButtonState();
+    }
+
+    private void TitleBarWebBackButton_Click(object sender, RoutedEventArgs e)
+    {
+        switch (NavigationPresenter.Content)
+        {
+            case ChatPage chatPage:
+                chatPage.TryGoBackInBrowser();
+                break;
+            case BookmarkPage bookmarkPage:
+                bookmarkPage.TryGoBackInBrowser();
+                break;
+        }
+
+        RefreshWebBackButtonState();
+    }
+
+    private void RefreshWebBackButtonState()
+    {
+        bool visible = NavigationPresenter.Content is ChatPage or BookmarkPage;
+        TitleBarWebBackButton.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!visible)
+        {
+            TitleBarWebBackButton.IsEnabled = false;
+            return;
+        }
+
+        TitleBarWebBackButton.IsEnabled = NavigationPresenter.Content switch
+        {
+            ChatPage chatPage => chatPage.CanGoBackInBrowser,
+            BookmarkPage bookmarkPage => bookmarkPage.CanGoBackInBrowser,
+            _ => false,
+        };
+    }
+
+    private static void UpdateTrayToolTip(string? tabTitle, string? mediaTitle = null)
+    {
+        string title = !string.IsNullOrWhiteSpace(mediaTitle)
+            ? mediaTitle.Trim()
+            : tabTitle?.Trim() ?? string.Empty;
+
+        TrayIconService.SetToolTipText(title.Length == 0
+            ? "Evania"
+            : $"Evania - {title}");
     }
 
     private static class NativeMethods

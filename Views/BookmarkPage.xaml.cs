@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Evania.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Navigation;
 using Microsoft.Web.WebView2.Core;
 
 namespace Evania.Views;
@@ -17,6 +16,7 @@ public sealed partial class BookmarkPage : Page
     private bool initializing;
     private bool pageReady;
     private Uri? pendingUri;
+    private Uri? currentUri;
     private string pendingSearchText = string.Empty;
 
     public BookmarkPage()
@@ -24,16 +24,12 @@ public sealed partial class BookmarkPage : Page
         InitializeComponent();
     }
 
-    protected override void OnNavigatedTo(NavigationEventArgs e)
+    public void Navigate(string url)
     {
-        base.OnNavigatedTo(e);
-
-        if (e.Parameter is string url &&
-            Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) &&
+        if (Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) &&
             (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
         {
             pendingUri = uri;
-            NavigateToPendingUri();
         }
     }
 
@@ -49,6 +45,12 @@ public sealed partial class BookmarkPage : Page
 
         if (initializing || BookmarkBrowser.CoreWebView2 is not null)
         {
+            if (pendingUri == currentUri && pageReady)
+            {
+                pendingUri = null;
+                return;
+            }
+
             NavigateToPendingUri();
             if (BookmarkBrowser.CoreWebView2 is not null && pendingUri is null)
             {
@@ -98,6 +100,7 @@ public sealed partial class BookmarkPage : Page
 
         if (pageReady)
         {
+            currentUri = pendingUri;
             _ = ApplySearchAsync(pendingSearchText);
         }
     }

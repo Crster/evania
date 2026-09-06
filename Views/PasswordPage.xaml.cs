@@ -228,15 +228,23 @@ public sealed partial class PasswordPage : Page
     /// <summary>
     /// Swaps the multiline password input for its read-only bullet stand-in and flips the eye icon.
     /// The real TextBox is never rewritten, so masking cannot corrupt the bound value.
+    /// When the password is empty the mask is skipped so the user can type immediately.
     /// </summary>
     private void ApplyPasswordMask()
     {
-        PasswordInput.Visibility = passwordMasked ? Visibility.Collapsed : Visibility.Visible;
-        PasswordInputMasked.Visibility = passwordMasked ? Visibility.Visible : Visibility.Collapsed;
-        PasswordInputMasked.Text = passwordMasked ? Mask(ViewModel.EditPassword) : string.Empty;
+        bool showMasked = passwordMasked && !string.IsNullOrEmpty(ViewModel.EditPassword);
+
+        PasswordInput.Visibility = showMasked ? Visibility.Collapsed : Visibility.Visible;
+        PasswordInputMasked.Visibility = showMasked ? Visibility.Visible : Visibility.Collapsed;
+        PasswordInputMasked.Text = showMasked ? Mask(ViewModel.EditPassword) : string.Empty;
 
         TogglePasswordIcon.Glyph = passwordMasked ? "\uE7B3" : "\uED1A";
         ToolTipService.SetToolTip(TogglePasswordButton, passwordMasked ? "Show password" : "Hide password");
+
+        if (!showMasked)
+        {
+            PasswordInput.Focus(FocusState.Programmatic);
+        }
     }
 
     private static string Mask(string value) => new('●', value.Length);

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Evania.Services;
@@ -26,6 +27,9 @@ public sealed partial class MainWindow : Window
     /// window is allowed to mean what it usually means instead of hiding it again.
     /// </summary>
     public bool IsQuitting { get; set; }
+
+    private readonly Dictionary<string, BookmarkPage> _bookmarkPages = new();
+    private ChatPage? _chatPage;
 
     public MainWindow()
     {
@@ -183,15 +187,35 @@ public sealed partial class MainWindow : Window
 
     private void Navigate(Type pageType, object? parameter = null)
     {
-        if (pageType == typeof(BookmarkPage))
+        if (pageType == typeof(BookmarkPage) && parameter is string bookmarkUrl)
         {
-            NavigationPresenter.Navigate(pageType, parameter);
+            if (!_bookmarkPages.TryGetValue(bookmarkUrl, out BookmarkPage? page))
+            {
+                page = new BookmarkPage();
+                _bookmarkPages[bookmarkUrl] = page;
+            }
+
+            if (ReferenceEquals(NavigationPresenter.Content, page))
+            {
+                return;
+            }
+
+            page.Navigate(bookmarkUrl);
+            NavigationPresenter.Content = page;
             return;
         }
 
-        if (NavigationPresenter.CurrentSourcePageType != pageType)
+        if (NavigationPresenter.Content?.GetType() != pageType)
         {
-            NavigationPresenter.Navigate(pageType, parameter);
+            if (pageType == typeof(ChatPage))
+            {
+                _chatPage ??= new ChatPage();
+                NavigationPresenter.Content = _chatPage;
+            }
+            else
+            {
+                NavigationPresenter.Content = Activator.CreateInstance(pageType);
+            }
         }
     }
 

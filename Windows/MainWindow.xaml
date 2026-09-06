@@ -54,7 +54,7 @@
                         Icon="{x:Bind Icon}" />
                 </DataTemplate>
             </NavigationView.MenuItemTemplate>
-            <Frame x:Name="NavigationPresenter" />
+            <ContentPresenter x:Name="NavigationPresenter" />
         </NavigationView>
     </Grid>
 </Window>

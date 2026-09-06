@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Evania.Services;
 using Evania.ViewModels;
@@ -169,20 +170,24 @@ public sealed partial class SettingsPage : Page
         picker.FileTypeChoices.Add("LiteDB database", new[] { ".db" });
         picker.SuggestedFileName = Path.GetFileNameWithoutExtension(ViewModel.CandidatePath);
 
-        // Ask to open where the file already is rather than at some default library.
-        try
-        {
-            if (File.Exists(ViewModel.CandidatePath))
-            {
-                picker.SuggestedSaveFile = await StorageFile.GetFileFromPathAsync(ViewModel.CandidatePath);
-            }
-        }
-        catch (Exception)
-        {
-        }
-
         WinRT.Interop.InitializeWithWindow.Initialize(
             picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+
+        // Start the picker where the current path lives, not at some default library.
+        // FileSavePicker has no managed API for the initial folder, so we go through the
+        // underlying IFileDialog COM interface.
+        string? directory = Path.GetDirectoryName(ViewModel.CandidatePath);
+
+        if (!string.IsNullOrEmpty(directory))
+        {
+            try
+            {
+                SetPickerFolder(picker, directory);
+            }
+            catch (Exception)
+            {
+            }
+        }
 
         StorageFile? chosen = await picker.PickSaveFileAsync();
 
@@ -271,4 +276,85 @@ public sealed partial class SettingsPage : Page
     }
 
     private void ErrorBar_Closed(InfoBar sender, object args) => ViewModel.ErrorMessage = string.Empty;
+
+    private static void SetPickerFolder(object picker, string folderPath)
+    {
+        Directory.CreateDirectory(folderPath);
+
+        nint fileDialog = Marshal.GetComInterfaceForObject(picker, typeof(IFileDialog));
+
+        if (fileDialog == nint.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            Guid shellItemGuid = typeof(IShellItem).GUID;
+            SHCreateItemFromParsingName(folderPath, nint.Zero, ref shellItemGuid, out nint shellItem);
+
+            if (shellItem != nint.Zero)
+            {
+                try
+                {
+                    ((IFileDialog)Marshal.GetObjectForIUnknown(fileDialog)).SetFolder(shellItem);
+                }
+                finally
+                {
+                    Marshal.Release(shellItem);
+                }
+            }
+        }
+        finally
+        {
+            Marshal.Release(fileDialog);
+        }
+    }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("42f85136-db7e-439c-85f1-e4075d135fc8")]
+    private interface IFileDialog
+    {
+        [PreserveSig]
+        nint Show(nint parent);
+
+        [PreserveSig]
+        nint SetFileTypes(uint count, nint filters);
+
+        [PreserveSig]
+        nint SetFileTypeIndex(uint id);
+
+        [PreserveSig]
+        nint GetFileTypeIndex(out uint id);
+
+        [PreserveSig]
+        nint Advise(nint sink, out uint cookie);
+
+        [PreserveSig]
+        nint Unadvise(uint cookie);
+
+        [PreserveSig]
+        nint SetOptions(uint options);
+
+        [PreserveSig]
+        nint GetOptions(out uint options);
+
+        [PreserveSig]
+        nint SetDefaultFolder(nint folder);
+
+        [PreserveSig]
+        nint SetFolder(nint folder);
+    }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
+    private interface IShellItem
+    {
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHCreateItemFromParsingName(
+        string path, nint bindContext, ref Guid riid, out nint shellItem);
 }

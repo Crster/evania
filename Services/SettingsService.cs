@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -12,7 +13,8 @@ using Windows.Foundation;
 namespace Evania.Services;
 
 /// <summary>
-/// Owns <c>%APPDATA%\Evania\settings.json</c>.
+/// Owns <c>%APPDATA%\Evania\settings.json</c>, outside the MSIX container so data survives
+/// uninstall and reinstall.
 ///
 /// Settings cannot live in the database they configure: the file has to be readable before we know
 /// where it is or whether it is protected by a master password. So the store is JSON, written through
@@ -21,8 +23,28 @@ namespace Evania.Services;
 /// </summary>
 public static partial class SettingsService
 {
-    public static string RootDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Evania");
+    // MSIX virtualizes every user-level path (APPDATA, USERPROFILE, KnownFolders, env vars).
+    // The machine-level registry is not virtualized for full-trust packages, so we read the
+    // real profiles directory from HKLM and combine it with the username to build the real path.
+    public static string RootDirectory { get; } = Path.Combine(GetRealAppDataPath(), "Evania");
+
+    private static string GetRealAppDataPath()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList");
+            string profilesDir = key?.GetValue("ProfilesDirectory") as string ?? "";
+            string userName = Environment.GetEnvironmentVariable("USERNAME")
+                ?? Environment.UserName;
+            if (!string.IsNullOrEmpty(profilesDir))
+            {
+                return Path.Combine(profilesDir, userName, "AppData", "Roaming");
+            }
+        }
+        catch { }
+        return Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    }
 
     public static string DefaultDatabasePath => Path.Combine(RootDirectory, "Evania.db");
 
@@ -77,6 +99,14 @@ public static partial class SettingsService
                 Save(settings);
             }
         };
+
+        // On a fresh install the file does not exist and no property has changed yet, so the
+        // change handler above has never fired. Persist the defaults so the file - and the
+        // directory it lives in - always exist after the app has run once.
+        if (!File.Exists(FilePath))
+        {
+            Save(settings);
+        }
 
         return settings;
     }

@@ -87,24 +87,16 @@ if ($resources) {
     $install["DependencyPath"] = $resources.FullName
 }
 
-try {
-    # Reinstalling the same version is refused by default; this flag is what makes a
-    # developer-signed package replaceable by its own rebuild.
-    Add-AppxPackage @install -ForceApplicationShutdown -ForceUpdateFromDevelopmentMode
+# Always remove first so runFullTrust is freshly applied. In-place updates
+# (-ForceUpdateFromDevelopmentMode) keep the old trust context, which causes
+# MSIX to virtualize %APPDATA% writes into the package container.
+$existing = Get-AppxPackage -Name $packageId
+if ($existing) {
+    Write-Host "Removing existing package $($existing.PackageFullName)..."
+    Remove-AppxPackage -Package $existing.PackageFullName
 }
-catch {
-    # A leftover loose registration cannot be upgraded to a staged package at all - the
-    # only way forward is removing it first. Evania's data lives in %APPDATA%\Evania and
-    # the picture/video libraries, so nothing user-visible is lost.
-    Write-Host "In-place update failed; removing the existing registration and reinstalling."
 
-    $existing = Get-AppxPackage -Name $packageId
-    if ($existing) {
-        Remove-AppxPackage -Package $existing.PackageFullName
-    }
-
-    Add-AppxPackage @install
-}
+Add-AppxPackage @install
 
 $package = Get-AppxPackage -Name $packageId
 if (-not $package) {
@@ -113,6 +105,14 @@ if (-not $package) {
 }
 Write-Host "Installed: $($package.PackageFullName) (SignatureKind: $($package.SignatureKind))"
 
-Write-Host "Launching app..."
-explorer.exe "shell:AppsFolder\$($package.PackageFamilyName)!$appId"
+# Launch the exe directly from the build output so it runs as a regular process
+# without MSIX file-system virtualization. The package stays installed for the
+# Copilot key provider extension, but the running process writes to the real %APPDATA%.
+$exePath = Join-Path $mainPackage.DirectoryName "Evania.exe"
+if (-not (Test-Path $exePath)) {
+    # Fall back to the package install location
+    $exePath = Join-Path $package.InstallLocation "Evania.exe"
+}
+Write-Host "Launching $exePath..."
+Start-Process $exePath
 Write-Host "Done."

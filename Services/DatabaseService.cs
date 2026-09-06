@@ -87,6 +87,8 @@ public static class DatabaseService
 
             try
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
                 ConnectionString connection = new() { Filename = path };
 
                 if (!string.IsNullOrEmpty(password))

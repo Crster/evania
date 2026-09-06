@@ -38,6 +38,6 @@ Use the existing app structure and conventions in this repository; do not introd
 
 ## Notes
 
-- Settings are persisted in `%APPDATA%\Evania`.
+- Settings and data are persisted in `%APPDATA%\Evania` (outside the MSIX container, survives uninstall).
 - Chat uses a shared WebView2 user data folder so provider sign-in survives across sessions.
 - The app includes startup task and Copilot key integration; be careful not to break activation or single-instance routing.

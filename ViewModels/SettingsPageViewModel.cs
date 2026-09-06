@@ -116,6 +116,12 @@ namespace Evania.ViewModels
         [ObservableProperty]
         public partial string ErrorMessage { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Optional UI callback the page supplies to request a password when an existing protected
+        /// database is selected without one.
+        /// </summary>
+        public Func<string, Task<string?>>? RequestDatabasePasswordAsync { get; set; }
+
         /// <summary>The dropdown selection, as the option record the ComboBox actually holds.</summary>
         public HotkeyOption SelectedHotkeyOption
         {
@@ -243,14 +249,18 @@ namespace Evania.ViewModels
 
             try
             {
-                string? currentPassword = DatabaseService.CurrentPassword ?? Settings.DatabasePassword;
-                bool passwordChanged = !string.Equals(CandidatePassword, currentPassword ?? string.Empty, StringComparison.Ordinal);
-                bool wantEncrypted = !string.IsNullOrEmpty(CandidatePassword);
+                DatabaseStatus result = await ApplyCandidateAsync(CandidatePassword);
 
-                DatabaseStatus result = await DatabaseService.ApplyAsync(
-                    CandidatePath,
-                    wantEncrypted,
-                    passwordChanged ? CandidatePassword : currentPassword);
+                if (!result.Connected && ShouldRequestPassword(result))
+                {
+                    string? enteredPassword = await RequestDatabasePasswordAsync!.Invoke(CandidatePath);
+
+                    if (!string.IsNullOrEmpty(enteredPassword))
+                    {
+                        CandidatePassword = enteredPassword;
+                        result = await ApplyCandidateAsync(CandidatePassword);
+                    }
+                }
 
                 if (!result.Connected)
                 {
@@ -274,6 +284,32 @@ namespace Evania.ViewModels
                 await Task.Delay(1600);
                 IsSuccess = false;
             }
+        }
+
+        private Task<DatabaseStatus> ApplyCandidateAsync(string candidatePassword)
+        {
+            string? currentPassword = DatabaseService.CurrentPassword ?? Settings.DatabasePassword;
+            bool passwordChanged = !string.Equals(candidatePassword, currentPassword ?? string.Empty, StringComparison.Ordinal);
+            bool wantEncrypted = !string.IsNullOrEmpty(candidatePassword);
+
+            return DatabaseService.ApplyAsync(
+                CandidatePath,
+                wantEncrypted,
+                passwordChanged ? candidatePassword : currentPassword);
+        }
+
+        private bool ShouldRequestPassword(DatabaseStatus result)
+        {
+            if (RequestDatabasePasswordAsync is null || !string.IsNullOrEmpty(CandidatePassword) || result.Connected)
+            {
+                return false;
+            }
+
+            string error = result.Error ?? string.Empty;
+
+            return error.Contains("password", StringComparison.OrdinalIgnoreCase)
+                || error.Contains("encrypted", StringComparison.OrdinalIgnoreCase)
+                || error.Contains("invalid datafile", StringComparison.OrdinalIgnoreCase);
         }
 
         public async Task SetStartWithWindowsAsync(bool enabled)

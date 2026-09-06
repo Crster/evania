@@ -71,6 +71,7 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
         DataContext = ViewModel;
+        ViewModel.RequestDatabasePasswordAsync = PromptForDatabasePasswordAsync;
     }
 
     private void SettingsPage_Loaded(object sender, RoutedEventArgs e)
@@ -164,18 +165,13 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
-        var picker = new FileSavePicker();
-
-        // A save picker offers named groups of extensions, unlike the open picker's flat filter.
-        picker.FileTypeChoices.Add("LiteDB database", new[] { ".db" });
-        picker.SuggestedFileName = Path.GetFileNameWithoutExtension(ViewModel.CandidatePath);
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add(".db");
 
         WinRT.Interop.InitializeWithWindow.Initialize(
             picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
 
         // Start the picker where the current path lives, not at some default library.
-        // FileSavePicker has no managed API for the initial folder, so we go through the
-        // underlying IFileDialog COM interface.
         string? directory = Path.GetDirectoryName(ViewModel.CandidatePath);
 
         if (!string.IsNullOrEmpty(directory))
@@ -189,7 +185,7 @@ public sealed partial class SettingsPage : Page
             }
         }
 
-        StorageFile? chosen = await picker.PickSaveFileAsync();
+        StorageFile? chosen = await picker.PickSingleFileAsync();
 
         if (chosen is not null)
         {
@@ -273,6 +269,41 @@ public sealed partial class SettingsPage : Page
     private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
     {
         ViewModel.CandidatePassword = PasswordBox.Password;
+    }
+
+    private async Task<string?> PromptForDatabasePasswordAsync(string path)
+    {
+        PasswordBox input = new()
+        {
+            PlaceholderText = "Password",
+            PasswordRevealMode = PasswordRevealMode.Peek
+        };
+
+        ContentDialog dialog = new()
+        {
+            Title = "Password required",
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = "This database is protected. Enter its password to use it." },
+                    new TextBlock { Text = path, FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
+                    input
+                }
+            },
+            PrimaryButtonText = "Use password",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(input.Password) ? null : input.Password;
     }
 
     private void ErrorBar_Closed(InfoBar sender, object args) => ViewModel.ErrorMessage = string.Empty;

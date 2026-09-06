@@ -52,17 +52,18 @@ public static class DatabaseService
     public static DatabaseStatus OpenFromSettings()
     {
         AppSettings settings = SettingsService.Current;
+        string path = EnsurePersistentDatabasePath(settings);
         string? password;
 
         try
         {
             password = settings.DatabaseEncryption
-                ? DatabaseCredentialVault.Read(settings.DatabasePath)
+                ? DatabaseCredentialVault.Read(path)
                 : null;
         }
         catch (Exception ex)
         {
-            return Status = new DatabaseStatus(false, settings.DatabaseEncryption, Explain(ex), SizeOf(settings.DatabasePath));
+            return Status = new DatabaseStatus(false, settings.DatabaseEncryption, Explain(ex), SizeOf(path));
         }
 
         if (settings.DatabaseEncryption && string.IsNullOrEmpty(password))
@@ -71,12 +72,66 @@ public static class DatabaseService
                 false,
                 true,
                 "No database password was found in Windows Credential Manager. Enter it in Settings and apply it again.",
-                SizeOf(settings.DatabasePath));
+                SizeOf(path));
         }
 
         settings.DatabasePassword = password;
 
-        return Open(settings.DatabasePath, password);
+        return Open(path, password);
+    }
+
+    private static string EnsurePersistentDatabasePath(AppSettings settings)
+    {
+        string configuredPath = string.IsNullOrWhiteSpace(settings.DatabasePath)
+            ? SettingsService.DefaultDatabasePath
+            : settings.DatabasePath;
+        string persistentPath = SettingsService.DefaultDatabasePath;
+
+        if (SamePath(configuredPath, persistentPath) || !IsPackageScopedPath(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        bool sourceExists = File.Exists(configuredPath);
+        bool targetExists = File.Exists(persistentPath);
+
+        if (sourceExists && targetExists)
+        {
+            return configuredPath;
+        }
+
+        try
+        {
+            string? sourcePassword = ReadPassword(configuredPath);
+            string? relocationError = Relocate(configuredPath, persistentPath);
+
+            if (relocationError is not null)
+            {
+                return configuredPath;
+            }
+
+            if (!string.IsNullOrEmpty(sourcePassword) && string.IsNullOrEmpty(ReadPassword(persistentPath)))
+            {
+                SavePassword(persistentPath, sourcePassword);
+            }
+
+            DatabaseCredentialVault.Delete(configuredPath);
+            settings.DatabasePath = persistentPath;
+
+            return persistentPath;
+        }
+        catch
+        {
+            return configuredPath;
+        }
+    }
+
+    private static bool IsPackageScopedPath(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        string marker = $"{Path.DirectorySeparatorChar}AppData{Path.DirectorySeparatorChar}Local{Path.DirectorySeparatorChar}Packages{Path.DirectorySeparatorChar}";
+
+        return fullPath.Contains(marker, StringComparison.OrdinalIgnoreCase);
     }
 
     public static DatabaseStatus Open(string path, string? password)
@@ -275,6 +330,8 @@ public static class DatabaseService
         {
             AppSettings settings = SettingsService.Current;
             string? sourcePath = openedPath ?? settings.DatabasePath;
+            bool pathChanged = !SamePath(sourcePath, path);
+            bool targetExists = File.Exists(path);
 
             // The running connection's password is the most reliable source for rollback: the stored
             // setting may lag behind a session-only password or a rotation that has not completed.
@@ -290,7 +347,8 @@ public static class DatabaseService
             {
                 FlushAndClose();
 
-                if (!SamePath(sourcePath, path))
+                // Switching to an already existing file means "use that file", not "move current over it".
+                if (pathChanged && !targetExists)
                 {
                     string? relocationError = Relocate(sourcePath!, path);
 
@@ -311,12 +369,15 @@ public static class DatabaseService
                         movedTo);
                 }
 
-                if (!PasswordsMatch(actualPassword, targetPassword))
+                bool switchedToExistingFile = pathChanged && targetExists;
+                string? passwordToUse = switchedToExistingFile ? actualPassword : targetPassword;
+
+                if (!switchedToExistingFile && !PasswordsMatch(actualPassword, targetPassword))
                 {
                     RebuildTo(targetPassword);
                 }
 
-                DatabaseStatus opened = Open(path, targetPassword);
+                DatabaseStatus opened = Open(path, passwordToUse);
 
                 if (!opened.Connected)
                 {
@@ -328,12 +389,12 @@ public static class DatabaseService
                 }
 
                 settings.DatabasePath = path;
-                settings.DatabaseEncryption = wantEncrypted;
-                settings.DatabasePassword = targetPassword;
+                settings.DatabaseEncryption = !string.IsNullOrEmpty(passwordToUse);
+                settings.DatabasePassword = passwordToUse;
                 settings.PendingDatabasePassword = null;
-                SavePassword(path, targetPassword);
+                SavePassword(path, passwordToUse);
 
-                if (!SamePath(sourcePath, path))
+                if (movedTo is not null)
                 {
                     DatabaseCredentialVault.Delete(sourcePath!);
                 }

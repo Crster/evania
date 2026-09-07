@@ -24,6 +24,10 @@ public static class GlobalHotkeyService
     public static ScreenshotHotkey Registered { get; private set; } = ScreenshotHotkey.None;
 
     private const uint WM_HOTKEY = 0x0312;
+    private const uint WM_KEYDOWN = 0x0100;
+    private const uint WM_KEYUP = 0x0101;
+    private const uint WM_SYSKEYDOWN = 0x0104;
+    private const uint WM_SYSKEYUP = 0x0105;
     private const int HotkeyId = 0x5641;
 
     private const uint MOD_ALT = 0x0001;
@@ -34,6 +38,9 @@ public static class GlobalHotkeyService
     private const uint VK_SNAPSHOT = 0x2C;
     private const uint VK_3 = 0x33;
     private const uint VK_P = 0x50;
+    private const int VK_MENU = 0x12;
+    private const int VK_CONTROL_KEY = 0x11;
+    private const int VK_SHIFT_KEY = 0x10;
 
     private static readonly IntPtr HWND_MESSAGE = new(-3);
     private const int ERROR_CLASS_ALREADY_EXISTS = 1410;
@@ -42,10 +49,15 @@ public static class GlobalHotkeyService
     private const string ClassName = "EvaniaHotkeyWindow";
 
     private static IntPtr windowHandle;
+    private static IntPtr keyboardHookHandle;
+    private static bool printScreenDown;
 
     // The window procedure is a managed delegate handed to unmanaged code: with nothing holding a
     // reference, the collector takes it and the next WM_HOTKEY calls into freed memory.
     private static NativeMethods.WndProc? windowProc;
+
+    // Same lifetime rule for the low-level keyboard hook callback.
+    private static NativeMethods.LowLevelKeyboardProc? keyboardProc;
 
     /// <summary>Creates the message window. Call on the UI thread; safe to call twice.</summary>
     public static void Attach()
@@ -121,6 +133,20 @@ public static class GlobalHotkeyService
             return null;
         }
 
+        if (hotkey == ScreenshotHotkey.PrintScreen)
+        {
+            if (!InstallPrintScreenHook())
+            {
+                LastError = "Evania could not start listening for Print Screen.";
+                return LastError;
+            }
+
+            Registered = hotkey;
+            LastError = null;
+
+            return null;
+        }
+
         if (windowHandle == IntPtr.Zero)
         {
             LastError = "Evania is not listening for shortcut keys yet.";
@@ -158,7 +184,11 @@ public static class GlobalHotkeyService
 
     private static void UnregisterCore()
     {
-        if (Registered != ScreenshotHotkey.None && windowHandle != IntPtr.Zero)
+        if (Registered == ScreenshotHotkey.PrintScreen)
+        {
+            RemovePrintScreenHook();
+        }
+        else if (Registered != ScreenshotHotkey.None && windowHandle != IntPtr.Zero)
         {
             NativeMethods.UnregisterHotKey(windowHandle, HotkeyId);
         }
@@ -179,6 +209,98 @@ public static class GlobalHotkeyService
         // this window shares the UI thread's message loop with the app itself, so quitting it here
         // would take the whole application down when the shortcut is only being changed.
         return NativeMethods.DefWindowProc(hWnd, message, wParam, lParam);
+    }
+
+    private static bool InstallPrintScreenHook()
+    {
+        if (keyboardHookHandle != IntPtr.Zero)
+        {
+            return true;
+        }
+
+        keyboardProc = KeyboardHook;
+        keyboardHookHandle = NativeMethods.SetWindowsHookEx(NativeMethods.WH_KEYBOARD_LL, keyboardProc, IntPtr.Zero, 0);
+
+        if (keyboardHookHandle == IntPtr.Zero)
+        {
+            keyboardProc = null;
+            return false;
+        }
+
+        printScreenDown = false;
+        return true;
+    }
+
+    private static void RemovePrintScreenHook()
+    {
+        if (keyboardHookHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        NativeMethods.UnhookWindowsHookEx(keyboardHookHandle);
+        keyboardHookHandle = IntPtr.Zero;
+        keyboardProc = null;
+        printScreenDown = false;
+    }
+
+    private static IntPtr KeyboardHook(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode < 0)
+        {
+            return NativeMethods.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+        }
+
+        try
+        {
+            uint message = unchecked((uint)wParam.ToInt64());
+
+            if (Registered != ScreenshotHotkey.PrintScreen)
+            {
+                return NativeMethods.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+            }
+
+            NativeMethods.KBDLLHOOKSTRUCT data = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
+
+            if (data.vkCode != VK_SNAPSHOT)
+            {
+                return NativeMethods.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+            }
+
+            bool hasModifiers = IsModifierDown(VK_MENU) || IsModifierDown(VK_CONTROL_KEY) || IsModifierDown(VK_SHIFT_KEY);
+
+            if (hasModifiers)
+            {
+                return NativeMethods.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+            }
+
+            if (message is WM_KEYDOWN or WM_SYSKEYDOWN)
+            {
+                if (!printScreenDown)
+                {
+                    printScreenDown = true;
+                    Invoked?.Invoke();
+                }
+
+                return (IntPtr)1;
+            }
+
+            if (message is WM_KEYUP or WM_SYSKEYUP)
+            {
+                printScreenDown = false;
+                return (IntPtr)1;
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return NativeMethods.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+    }
+
+    private static bool IsModifierDown(int key)
+    {
+        return (NativeMethods.GetAsyncKeyState(key) & 0x8000) != 0;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -202,13 +324,39 @@ public static class GlobalHotkeyService
 
     private static class NativeMethods
     {
+        public const int WH_KEYBOARD_LL = 13;
+
         public delegate IntPtr WndProc(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+        public delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct KBDLLHOOKSTRUCT
+        {
+            public uint vkCode;
+            public uint scanCode;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
         [DllImport("user32.dll")]
         public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern short GetAsyncKeyState(int vKey);
 
         // CharSet must match CreateWindowEx below: without it the runtime binds RegisterClassExA,
         // which reads the class name as ANSI and takes "EvaniaHotkeyWindow" as just "E", so the wide

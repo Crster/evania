@@ -57,6 +57,17 @@ namespace Evania.ViewModels
             Timeout = TimeSpan.FromSeconds(8)
         };
 
+        private const string BookmarkTitleUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0";
+
+        private static readonly string[] InvalidBookmarkTitleFragments =
+        [
+            "outdated browser",
+            "unsupported browser",
+            "browser not supported",
+            "your browser is deprecated",
+            "please upgrade"
+        ];
+
         private static readonly Regex HtmlTitleRegex = new("<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
 
         public ObservableCollection<WebBookmark> Bookmarks { get; } = [];
@@ -485,7 +496,7 @@ namespace Evania.ViewModels
             try
             {
                 using HttpRequestMessage request = new(HttpMethod.Get, url);
-                request.Headers.TryAddWithoutValidation("User-Agent", "Evania/1.0");
+                request.Headers.TryAddWithoutValidation("User-Agent", BookmarkTitleUserAgent);
 
                 using HttpResponseMessage response = await BookmarkTitleHttpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead);
 
@@ -509,7 +520,14 @@ namespace Evania.ViewModels
                     return null;
                 }
 
-                return Regex.Replace(title, "\\s+", " ");
+                title = Regex.Replace(title, "\\s+", " ");
+
+                if (HasInvalidBookmarkTitle(title))
+                {
+                    return null;
+                }
+
+                return title;
             }
             catch
             {
@@ -525,6 +543,12 @@ namespace Evania.ViewModels
             }
 
             return url;
+        }
+
+        private static bool HasInvalidBookmarkTitle(string title)
+        {
+            string normalized = title.Trim().ToLowerInvariant();
+            return InvalidBookmarkTitleFragments.Any(fragment => normalized.Contains(fragment, StringComparison.Ordinal));
         }
 
         private static bool TryNormalizeBookmarkUrl(string value, [NotNullWhen(true)] out string? normalizedUrl)

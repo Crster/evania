@@ -49,6 +49,7 @@ namespace Evania.Services
             editWindow.Closed += (s, e) => closeTcs.TrySetResult(true);
 
             editWindow.Activate();
+            PromoteToForeground(editWindow);
 
             await closeTcs.Task;
 
@@ -260,6 +261,35 @@ namespace Evania.Services
             return NativeMethods.GetSystemMetrics((int)metric);
         }
 
+        private static void PromoteToForeground(Microsoft.UI.Xaml.Window window)
+        {
+            IntPtr hWnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+
+            if (hWnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWNORMAL);
+            NativeMethods.SetWindowPos(
+                hWnd,
+                NativeMethods.HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+            NativeMethods.SetWindowPos(
+                hWnd,
+                NativeMethods.HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_SHOWWINDOW);
+            NativeMethods.SetForegroundWindow(hWnd);
+        }
+
         private enum SystemMetric
         {
             SM_XVIRTUALSCREEN = 76,
@@ -270,8 +300,28 @@ namespace Evania.Services
 
         private static class NativeMethods
         {
+            public const int SW_SHOWNORMAL = 1;
+            public const uint SWP_NOSIZE = 0x0001;
+            public const uint SWP_NOMOVE = 0x0002;
+            public const uint SWP_NOACTIVATE = 0x0010;
+            public const uint SWP_SHOWWINDOW = 0x0040;
+            public static readonly IntPtr HWND_TOPMOST = new(-1);
+            public static readonly IntPtr HWND_NOTOPMOST = new(-2);
+
             [DllImport("user32.dll")]
             public static extern int GetSystemMetrics(int nIndex);
+
+            [DllImport("user32.dll")]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+            [DllImport("user32.dll")]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+            [DllImport("user32.dll")]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool SetForegroundWindow(IntPtr hWnd);
         }
     }
 }

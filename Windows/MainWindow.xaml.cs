@@ -142,7 +142,7 @@ public sealed partial class MainWindow : Window
         {
             TitleBarSearchBox.PlaceholderText = "Search settings";
             Navigate(typeof(SettingsPage));
-            UpdateTrayToolTip("Settings");
+            UpdateTrayToolTipForCurrentSelection();
             RefreshWebBackButtonState();
 
             return;
@@ -162,7 +162,7 @@ public sealed partial class MainWindow : Window
             string bookmarkUrl = item.Tag[MainViewModel.BookmarkTagPrefix.Length..];
             TitleBarSearchBox.PlaceholderText = "Search bookmarks";
             Navigate(typeof(BookmarkPage), bookmarkUrl);
-            UpdateTrayToolTip(item.Content, (NavigationPresenter.Content as BookmarkPage)?.ActiveMediaTitle);
+            UpdateTrayToolTipForCurrentSelection();
             RefreshWebBackButtonState();
             return;
         }
@@ -188,7 +188,7 @@ public sealed partial class MainWindow : Window
                 _ => "Search"
             };
             Navigate(pageType);
-            UpdateTrayToolTip(item.Content);
+            UpdateTrayToolTipForCurrentSelection();
             RefreshWebBackButtonState();
         }
     }
@@ -236,16 +236,7 @@ public sealed partial class MainWindow : Window
 
     private void BookmarkPage_TrayMediaStateChanged(object? sender, EventArgs e)
     {
-        if (!ReferenceEquals(NavigationPresenter.Content, sender))
-        {
-            return;
-        }
-
-        string tabTitle = NavView.SelectedItem is NavigationItemViewModel item
-            ? item.Content
-            : "Bookmark";
-
-        UpdateTrayToolTip(tabTitle, (sender as BookmarkPage)?.ActiveMediaTitle);
+        UpdateTrayToolTipForCurrentSelection();
     }
 
     private void WebPage_BrowserNavigationStateChanged(object? sender, EventArgs e)
@@ -290,6 +281,28 @@ public sealed partial class MainWindow : Window
             BookmarkPage bookmarkPage => bookmarkPage.CanGoBackInBrowser,
             _ => false,
         };
+    }
+
+    private void UpdateTrayToolTipForCurrentSelection()
+    {
+        string tabTitle = NavView.SelectedItem is NavigationItemViewModel item
+            ? item.Content
+            : "Evania";
+
+        UpdateTrayToolTip(tabTitle, GetActiveBookmarkMediaTitle());
+    }
+
+    private string? GetActiveBookmarkMediaTitle()
+    {
+        foreach (BookmarkPage bookmarkPage in _bookmarkPages.Values)
+        {
+            if (!string.IsNullOrWhiteSpace(bookmarkPage.ActiveMediaTitle))
+            {
+                return bookmarkPage.ActiveMediaTitle;
+            }
+        }
+
+        return null;
     }
 
     private static void UpdateTrayToolTip(string? tabTitle, string? mediaTitle = null)

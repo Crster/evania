@@ -7,6 +7,7 @@
     xmlns:models="using:Evania.Models"
     xmlns:converters="using:Evania.Converters"
     xmlns:editor="using:Evania.Controls.MarkdownEditor"
+    xmlns:local="using:Evania.Views"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     Loaded="NotePage_Loaded"
     Unloaded="NotePage_Unloaded">
@@ -119,11 +120,10 @@
         <!-- Card-style list item: the default item template paints a flat bar, so the whole
              chrome is replaced with a rounded card. -->
         <Style x:Key="NoteCardItemStyle" TargetType="ListViewItem">
-            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Margin" Value="0,0,0,12" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="MinHeight" Value="0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="IsTabStop" Value="False" />
             <Setter Property="Template">
@@ -160,7 +160,7 @@
                                 <ContentPresenter
                                     Content="{TemplateBinding Content}"
                                     ContentTemplate="{TemplateBinding ContentTemplate}"
-                                    Padding="14,12" />
+                                    Padding="16,14" />
                             </Border>
                         </Grid>
                     </ControlTemplate>
@@ -423,7 +423,7 @@
                 DoubleTapped="NoteList_DoubleTapped">
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Spacing="4">
+                        <StackPanel Spacing="6">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -431,24 +431,28 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock
                                     Text="{Binding DisplayTitle}"
-                                    FontSize="15"
+                                    local:NoteListTextRenderer.SearchQuery="{Binding DataContext.Filter, ElementName=PageRoot, Mode=OneWay}"
+                                    FontSize="16"
                                     FontWeight="SemiBold"
-                                    TextTrimming="CharacterEllipsis" />
+                                    TextWrapping="NoWrap"
+                                    MaxLines="1"
+                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                                 <TextBlock
                                     Grid.Column="1"
                                     Text="{Binding TimeText}"
                                     FontSize="11"
                                     Opacity="0.55"
                                     VerticalAlignment="Center"
-                                    Margin="12,0,0,0" />
+                                    Margin="8,0,0,0" />
                             </Grid>
                             <TextBlock
                                 Text="{Binding Preview}"
+                                local:NoteListTextRenderer.SearchQuery="{Binding DataContext.Filter, ElementName=PageRoot, Mode=OneWay}"
                                 FontSize="12"
-                                MaxLines="2"
+                                MaxLines="4"
                                 TextWrapping="WrapWholeWords"
-                                TextTrimming="CharacterEllipsis"
-                                Opacity="0.65" />
+                                Opacity="0.82"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                     </DataTemplate>
                 </ListView.ItemTemplate>

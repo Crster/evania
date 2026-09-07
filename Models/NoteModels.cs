@@ -75,6 +75,8 @@ public partial class NoteListItem : ObservableObject
 
     public required string Preview { get; init; }
 
+    public required string PreviewMarkdown { get; init; }
+
     public required string TimeText { get; init; }
 }
 

@@ -46,8 +46,8 @@ namespace Evania.ViewModels
 
         public IReadOnlyList<ChatProviderOption> ChatProviderOptions { get; } =
         [
-            new ChatProviderOption(ChatProvider.Gemini, ChatProvider.Gemini.ToDisplayString()),
             new ChatProviderOption(ChatProvider.Copilot, ChatProvider.Copilot.ToDisplayString()),
+            new ChatProviderOption(ChatProvider.Gemini, ChatProvider.Gemini.ToDisplayString()),
             new ChatProviderOption(ChatProvider.ChatGPT, ChatProvider.ChatGPT.ToDisplayString()),
             new ChatProviderOption(ChatProvider.Claude, ChatProvider.Claude.ToDisplayString()),
         ];

@@ -25,6 +25,7 @@ public sealed partial class ChatPage : Page
     private bool initializing;
     private bool coreEventsAttached;
     private bool canGoBack;
+    private ChatProvider? lastSyncedProvider;
 
     public event EventHandler? BrowserNavigationStateChanged;
 
@@ -44,7 +45,7 @@ public sealed partial class ChatPage : Page
         if (ChatBrowser.CoreWebView2 is not null)
         {
             AttachCoreWebView2Events();
-            SyncChatSource();
+            SyncChatSourceIfProviderChanged();
             UpdateNavigationState();
             return;
         }
@@ -67,7 +68,7 @@ public sealed partial class ChatPage : Page
             ? global::Windows.UI.Color.FromArgb(0xFF, 0x20, 0x20, 0x20)
             : global::Windows.UI.Color.FromArgb(0xFF, 0xF3, 0xF3, 0xF3);
 
-        SyncChatSource();
+        SyncChatSourceIfProviderChanged();
         UpdateNavigationState();
     }
 
@@ -85,18 +86,21 @@ public sealed partial class ChatPage : Page
     {
         if (e.PropertyName == nameof(AppSettings.ChatProvider) && ChatBrowser.CoreWebView2 is not null)
         {
-            SyncChatSource();
+            SyncChatSourceIfProviderChanged();
         }
     }
 
-    private void SyncChatSource()
+    private void SyncChatSourceIfProviderChanged()
     {
-        Uri target = ViewModel.ChatUrl;
+        ChatProvider provider = SettingsService.Current.ChatProvider;
 
-        if (ChatBrowser.Source != target)
+        if (lastSyncedProvider == provider)
         {
-            ChatBrowser.Source = target;
+            return;
         }
+
+        ChatBrowser.Source = ViewModel.ChatUrl;
+        lastSyncedProvider = provider;
     }
 
     public bool TryGoBackInBrowser()

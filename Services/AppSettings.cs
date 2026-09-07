@@ -30,8 +30,8 @@ public static class ScreenshotHotkeyExtensions
 /// <summary>Which AI chat service the Chat page shows.</summary>
 public enum ChatProvider
 {
-    Gemini,
     Copilot,
+    Gemini,
     ChatGPT,
     Claude,
 }
@@ -40,20 +40,20 @@ public static class ChatProviderExtensions
 {
     public static string ToDisplayString(this ChatProvider provider) => provider switch
     {
-        ChatProvider.Gemini => "Gemini",
         ChatProvider.Copilot => "Copilot",
+        ChatProvider.Gemini => "Gemini",
         ChatProvider.ChatGPT => "ChatGPT",
         ChatProvider.Claude => "Claude",
-        _ => "Gemini",
+        _ => "Copilot",
     };
 
     public static string ToUrl(this ChatProvider provider) => provider switch
     {
-        ChatProvider.Gemini => "https://gemini.google.com/app",
         ChatProvider.Copilot => "https://copilot.microsoft.com",
+        ChatProvider.Gemini => "https://gemini.google.com/app",
         ChatProvider.ChatGPT => "https://chatgpt.com",
         ChatProvider.Claude => "https://claude.ai",
-        _ => "https://gemini.google.com/app",
+        _ => "https://copilot.microsoft.com",
     };
 }
 
@@ -103,7 +103,7 @@ public partial class AppSettings : ObservableObject
     /// providers in Settings navigates a loaded Chat page immediately.
     /// </summary>
     [ObservableProperty]
-    public partial ChatProvider ChatProvider { get; set; } = ChatProvider.Gemini;
+    public partial ChatProvider ChatProvider { get; set; } = ChatProvider.Copilot;
 
     /// <summary>
     /// The notes list sort the user last chose; the Notes page restores it on load.

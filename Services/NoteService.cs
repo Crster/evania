@@ -42,6 +42,7 @@ public static class NoteService
                 Id = note.Id,
                 DisplayTitle = GetDisplayTitle(note),
                 Preview = CreatePreview(note),
+                PreviewMarkdown = CreatePreviewMarkdown(note),
                 TimeText = sortByCreated
                     ? "Created " + RelativeTimeText(note.CreatedAt)
                     : RelativeTimeText(note.UpdatedAt),
@@ -183,14 +184,21 @@ public static class NoteService
 
     private static string CreatePreview(NoteDocument note)
     {
-        string plainText = note.EditorViewportSourcePosition >= 0 && !string.IsNullOrEmpty(note.Markdown)
-            ? MarkdownTextUtilities.ToPlainText(note.Markdown, note.EditorViewportSourcePosition)
+        string preview = CreatePreviewMarkdown(note);
+        return preview.Length <= 1024 ? preview : $"{preview[..1021]}...";
+    }
+
+    private static string CreatePreviewMarkdown(NoteDocument note)
+    {
+        string source = !string.IsNullOrWhiteSpace(note.Markdown)
+            ? MarkdownTextUtilities.ToPlainText(note.Markdown, 0)
             : note.PlainText ?? string.Empty;
+
         string preview = string.Join(
             " ",
-            plainText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            source.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
-        return preview.Length <= 180 ? preview : $"{preview[..177]}...";
+        return preview.Length <= 1024 ? preview : $"{preview[..1021]}...";
     }
 
     private static NoteDocument? Normalize(NoteDocument? note)

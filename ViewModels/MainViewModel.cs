@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Evania.Services;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Evania.ViewModels
@@ -30,6 +31,10 @@ namespace Evania.ViewModels
         // Selection belongs to the NavigationView. Mirroring it here would mean holding an item the
         // view model never made - the settings entry is the control's own - and the binding that
         // kept the two in step would have to cast it to a type it is not.
+
+        // Bookmarks now load with the database, on the background thread that opens it, so the
+        // change can arrive off the UI thread even though MenuItems is bound to the NavigationView.
+        private readonly DispatcherQueue dispatcherQueue = DispatcherQueue.GetForCurrentThread();
 
         public MainViewModel()
         {
@@ -75,10 +80,19 @@ namespace Evania.ViewModels
 
         private void Settings_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(AppSettings.Bookmarks))
+            if (e.PropertyName != nameof(AppSettings.Bookmarks))
+            {
+                return;
+            }
+
+            if (dispatcherQueue is null || dispatcherQueue.HasThreadAccess)
             {
                 RebuildMenuItems();
+
+                return;
             }
+
+            dispatcherQueue.TryEnqueue(RebuildMenuItems);
         }
 
         private void RebuildMenuItems()

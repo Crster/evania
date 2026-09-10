@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Evania.Services;
+using Microsoft.UI.Dispatching;
 
 namespace Evania.ViewModels
 {
@@ -128,10 +129,21 @@ namespace Evania.ViewModels
         public partial string ErrorMessage { get; set; } = string.Empty;
 
         /// <summary>
-        /// Optional UI callback the page supplies to request a password when an existing protected
-        /// database is selected without one.
+        /// Says up front that the file at the staged path is encrypted, so selecting a protected
+        /// database is not silent until Apply fails. Empty when the path is not an encrypted file.
         /// </summary>
-        public Func<string, Task<string?>>? RequestDatabasePasswordAsync { get; set; }
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(HasEncryptionNotice))]
+        public partial string EncryptionNotice { get; set; } = string.Empty;
+
+        public bool HasEncryptionNotice => EncryptionNotice.Length > 0;
+
+        /// <summary>
+        /// Optional UI callback the page supplies to request a password when an existing protected
+        /// database is selected without one. The bool says whether the previous password was
+        /// rejected, so the prompt can say so rather than repeating its opening question.
+        /// </summary>
+        public Func<string, bool, Task<string?>>? RequestDatabasePasswordAsync { get; set; }
 
         /// <summary>The dropdown selection, as the option record the ComboBox actually holds.</summary>
         public HotkeyOption SelectedHotkeyOption
@@ -155,6 +167,10 @@ namespace Evania.ViewModels
 
         private bool stagingHotkey;
 
+        // Applying a different database reloads the bookmarks from it on a background thread, so
+        // the list this page binds has to be rebuilt back on the UI thread.
+        private readonly DispatcherQueue dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+
         public SettingsPageViewModel()
         {
             ResetStagingFromSettings();
@@ -169,9 +185,18 @@ namespace Evania.ViewModels
                     OnPropertyChanged(nameof(StartsHiddenInTray));
                 }
 
-                if (e.PropertyName == nameof(AppSettings.Bookmarks))
+                if (e.PropertyName != nameof(AppSettings.Bookmarks))
+                {
+                    return;
+                }
+
+                if (dispatcherQueue is null || dispatcherQueue.HasThreadAccess)
                 {
                     SyncBookmarksFromSettings();
+                }
+                else
+                {
+                    dispatcherQueue.TryEnqueue(SyncBookmarksFromSettings);
                 }
             };
 
@@ -184,8 +209,21 @@ namespace Evania.ViewModels
         /// </summary>
         public void ResetStagingFromSettings()
         {
-            CandidatePath = Settings.DatabasePath;
-            CandidatePassword = DatabaseService.CurrentPassword ?? Settings.DatabasePassword ?? string.Empty;
+            // Restoring the values the page already reflects is not the user picking a database, so
+            // it must not trigger the password prompt.
+            resettingStaging = true;
+
+            try
+            {
+                CandidatePath = Settings.DatabasePath;
+                CandidatePassword = DatabaseService.CurrentPassword ?? Settings.DatabasePassword ?? string.Empty;
+            }
+            finally
+            {
+                resettingStaging = false;
+            }
+
+            lastPromptedPath = null;
 
             // Staged quietly: assigning the record the binding already shows must not read as a
             // request to re-register the hotkey.
@@ -194,6 +232,7 @@ namespace Evania.ViewModels
             stagingHotkey = false;
 
             SelectedChatProviderOption = ChatProviderOptions.FirstOrDefault(o => o.Value == Settings.ChatProvider) ?? ChatProviderOptions[0];
+            UpdateEncryptionNotice();
             SyncBookmarksFromSettings();
             NewBookmarkUrl = string.Empty;
         }
@@ -233,12 +272,121 @@ namespace Evania.ViewModels
         {
             OnPropertyChanged(nameof(NeedsApply));
             OnPropertyChanged(nameof(ApplyIsEnabled));
+            UpdateEncryptionNotice();
+
+            // Picking a protected database asks for its password there and then, rather than
+            // waiting for Apply to be pressed. Nothing is opened by this - the answer is staged
+            // alongside the path, and the pair is still applied together.
+            _ = PromptForStagedPathPasswordAsync(value);
+        }
+
+        /// <summary>
+        /// True while <see cref="ResetStagingFromSettings"/> is putting the persisted values back,
+        /// so that reopening the page cannot read as a database selection.
+        /// </summary>
+        private bool resettingStaging;
+
+        /// <summary>The path the prompt last opened for, so a re-entry cannot stack dialogs.</summary>
+        private string? lastPromptedPath;
+
+        private bool isPromptingForPath;
+
+        /// <summary>
+        /// Asks for the password of a newly staged encrypted database.
+        ///
+        /// The prompt is unconditional for a file that is not the one already open: a password
+        /// saved in Windows Credential Manager says this machine opened the file once, not that
+        /// whoever is at the keyboard now may open it again.
+        /// </summary>
+        private async Task PromptForStagedPathPasswordAsync(string path)
+        {
+            string staged = path?.Trim() ?? string.Empty;
+
+            if (resettingStaging || isPromptingForPath || RequestDatabasePasswordAsync is null)
+            {
+                return;
+            }
+
+            // The header read comes first: it is the only check here that also proves the path is
+            // one the file APIs accept, which the comparison below assumes.
+            if (staged.Length == 0 ||
+                string.Equals(staged, lastPromptedPath, StringComparison.OrdinalIgnoreCase) ||
+                !DatabaseService.IsEncryptedFile(staged) ||
+                IsCurrentlyOpenDatabase(staged))
+            {
+                return;
+            }
+
+            isPromptingForPath = true;
+
+            try
+            {
+                lastPromptedPath = staged;
+
+                string? entered = await RequestDatabasePasswordAsync.Invoke(staged, false);
+
+                // A path typed character by character can move on while the dialog is up; a
+                // password for a file no longer staged must not be staged with it.
+                if (!string.Equals(CandidatePath?.Trim(), staged, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(entered))
+                {
+                    CandidatePassword = entered;
+
+                    return;
+                }
+
+                // Cancelled. The box is cleared rather than left holding the previous database's
+                // password, which would only produce a confusing failure on Apply.
+                CandidatePassword = string.Empty;
+                ErrorMessage = "That database is encrypted. Apply needs its password.";
+            }
+            finally
+            {
+                isPromptingForPath = false;
+            }
         }
 
         partial void OnCandidatePasswordChanged(string value)
         {
             OnPropertyChanged(nameof(NeedsApply));
             OnPropertyChanged(nameof(ApplyIsEnabled));
+            UpdateEncryptionNotice();
+        }
+
+        /// <summary>
+        /// Reads the header of the staged file to see whether it is encrypted, and says so before
+        /// Apply is pressed. The cases read differently to the user: an encrypted file whose
+        /// password is already saved needs nothing typed, one without a saved password does, and an
+        /// unencrypted file needs no notice at all.
+        /// </summary>
+        private void UpdateEncryptionNotice()
+        {
+            string path = CandidatePath?.Trim() ?? string.Empty;
+
+            if (!DatabaseService.IsEncryptedFile(path))
+            {
+                EncryptionNotice = string.Empty;
+
+                return;
+            }
+
+            // A saved password no longer earns a notice of its own: it is not used unprompted any
+            // more, and the line it printed only repeated what the status line underneath already
+            // says about the file being encrypted.
+            if (DatabaseService.HasKnownPasswordFor(path))
+            {
+                EncryptionNotice = string.Empty;
+
+                return;
+            }
+
+            EncryptionNotice = string.IsNullOrEmpty(CandidatePassword)
+                ? "This database is encrypted. Enter its password below - Evania will ask for it otherwise."
+                : "This database is encrypted. The password below will be used to unlock it.";
         }
 
         [RelayCommand]
@@ -250,32 +398,68 @@ namespace Evania.ViewModels
             }
 
             ErrorMessage = string.Empty;
-            IsApplying = true;
 
             // Normalise what was typed before it is compared to anything, so a stray space cannot
             // leave Apply looking needed forever.
-            CandidatePath = CandidatePath.Trim();
+            CandidatePath = (CandidatePath ?? string.Empty).Trim();
 
+            // An empty box is a half-finished edit, not a request. Saying so here keeps the live
+            // database open and untouched, which is what clearing a text box should cost.
+            if (CandidatePath.Length == 0)
+            {
+                ErrorMessage = "Enter the path of a database file. The current database is still open.";
+
+                return;
+            }
+
+            IsApplying = true;
+
+            string targetPath = CandidatePath;
             bool applied = false;
 
             try
             {
+                // An encrypted file whose password nothing on hand knows cannot be opened by trying,
+                // so ask before the attempt rather than making the user read a LiteDB failure first.
+                if (NeedsPasswordUpFront(targetPath))
+                {
+                    string? upFrontPassword = await RequestDatabasePasswordAsync!.Invoke(targetPath, false);
+
+                    if (string.IsNullOrEmpty(upFrontPassword))
+                    {
+                        ErrorMessage = "That database is encrypted and cannot be opened without its password.";
+
+                        return;
+                    }
+
+                    CandidatePassword = upFrontPassword;
+                }
+
                 DatabaseStatus result = await ApplyCandidateAsync(CandidatePassword);
 
-                if (!result.Connected && ShouldRequestPassword(result))
+                // A refused password is usually a typo, so offer the box again rather than only
+                // reporting the failure. Three tries catches one without turning into a guessing
+                // game against someone else's database.
+                for (int attempt = 0; attempt < 3 && ShouldRequestPassword(targetPath, result); attempt++)
                 {
-                    string? enteredPassword = await RequestDatabasePasswordAsync!.Invoke(CandidatePath);
+                    string? enteredPassword = await RequestDatabasePasswordAsync!.Invoke(targetPath, true);
 
-                    if (!string.IsNullOrEmpty(enteredPassword))
+                    if (string.IsNullOrEmpty(enteredPassword))
                     {
-                        CandidatePassword = enteredPassword;
-                        result = await ApplyCandidateAsync(CandidatePassword);
+                        break;
                     }
+
+                    CandidatePassword = enteredPassword;
+                    result = await ApplyCandidateAsync(CandidatePassword);
                 }
 
                 if (!result.Connected)
                 {
-                    ErrorMessage = result.Error ?? "The database could not be changed.";
+                    // A rejected password is worth saying plainly: the LiteDB message underneath it
+                    // reads as file corruption to anyone who has not seen it before.
+                    ErrorMessage = ShouldRequestPassword(targetPath, result)
+                        ? "That password does not open this database. Nothing was changed."
+                        : result.Error ?? "The database could not be changed.";
                 }
                 else
                 {
@@ -309,11 +493,69 @@ namespace Evania.ViewModels
                 passwordChanged ? candidatePassword : currentPassword);
         }
 
-        private bool ShouldRequestPassword(DatabaseStatus result)
+        /// <summary>
+        /// True when the staged file is encrypted and is not the one already open, in which case
+        /// its password is always asked for.
+        ///
+        /// A saved password is deliberately no longer accepted as a reason to skip the prompt.
+        /// Windows Credential Manager holding a key for a file only says this machine opened it
+        /// once; it does not say the person at the keyboard now is the one who set it. Switching to
+        /// a protected database is exactly the moment to ask. The password box is not consulted
+        /// either - it is pre-filled with the open database's password, which says nothing about a
+        /// different file.
+        /// </summary>
+        private bool NeedsPasswordUpFront(string path) =>
+            RequestDatabasePasswordAsync is not null
+            && DatabaseService.IsEncryptedFile(path)
+            && !IsCurrentlyOpenDatabase(path)
+            && !AlreadyPromptedFor(path);
+
+        /// <summary>
+        /// Whether staging this path already asked for its password and got one. Without this,
+        /// choosing a protected database would ask once when it is picked and again on Apply.
+        /// </summary>
+        private bool AlreadyPromptedFor(string path) =>
+            string.Equals(path?.Trim(), lastPromptedPath, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(CandidatePassword);
+
+        /// <summary>
+        /// Whether the staged path is the live connection's own file. Re-applying that one - to
+        /// change its password, say - is not "selecting an encrypted database", and prompting for a
+        /// key the session is already holding would only be noise.
+        /// </summary>
+        private static bool IsCurrentlyOpenDatabase(string path)
         {
-            if (RequestDatabasePasswordAsync is null || !string.IsNullOrEmpty(CandidatePassword) || result.Connected)
+            if (DatabaseService.CurrentPath is not string openPath)
             {
                 return false;
+            }
+
+            try
+            {
+                return string.Equals(
+                    Path.GetFullPath(openPath),
+                    Path.GetFullPath(path),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception)
+            {
+                // A path the file APIs reject is certainly not the one already open.
+                return false;
+            }
+        }
+
+        private bool ShouldRequestPassword(string path, DatabaseStatus result)
+        {
+            if (RequestDatabasePasswordAsync is null || result.Connected)
+            {
+                return false;
+            }
+
+            // The file header settles it outright; the message match below stays as the fallback for
+            // files the header check cannot classify.
+            if (DatabaseService.IsEncryptedFile(path))
+            {
+                return true;
             }
 
             string error = result.Error ?? string.Empty;
@@ -464,6 +706,7 @@ namespace Evania.ViewModels
 
             OnPropertyChanged(nameof(NeedsApply));
             OnPropertyChanged(nameof(ApplyIsEnabled));
+            UpdateEncryptionNotice();
         }
 
         private void SyncBookmarksFromSettings()

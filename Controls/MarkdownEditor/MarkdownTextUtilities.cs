@@ -17,6 +17,14 @@ internal static class MarkdownTextUtilities
     public static string ToPlainText(MarkdownDocument document)
         => ToPlainText(document, 0);
 
+    /// <summary>
+    /// Projects the markdown from <paramref name="sourcePosition"/> onward to plain text.
+    /// </summary>
+    /// <remarks>
+    /// The cut is exact rather than block-aligned: text before the position is dropped even when it
+    /// shares a paragraph with text after it, so a caller handed the offset at the top of a scrolled
+    /// viewport gets a projection that starts on that very line.
+    /// </remarks>
     public static string ToPlainText(string markdown, int sourcePosition)
     {
         var document = new MarkdownDocument();
@@ -46,7 +54,7 @@ internal static class MarkdownTextUtilities
                             builder.Append('\t');
                         }
 
-                        AppendInlines(builder, row.Cells[i].Inlines);
+                        AppendInlines(builder, row.Cells[i].Inlines, sourcePosition);
                     }
 
                     builder.Append('\n');
@@ -55,21 +63,30 @@ internal static class MarkdownTextUtilities
                 continue;
             }
 
-            AppendInlines(builder, block.Inlines);
+            AppendInlines(builder, block.Inlines, sourcePosition);
             builder.Append('\n');
         }
 
         return builder.ToString().TrimEnd('\n');
     }
 
-    private static void AppendInlines(StringBuilder builder, System.Collections.Generic.IReadOnlyList<MarkdownInline> inlines)
+    private static void AppendInlines(
+        StringBuilder builder,
+        System.Collections.Generic.IReadOnlyList<MarkdownInline> inlines,
+        int sourcePosition)
     {
         foreach (MarkdownInline inline in inlines)
         {
-            if (!inline.IsSyntax)
+            if (inline.IsSyntax || inline.End <= sourcePosition)
             {
-                builder.Append(inline.Text);
+                continue;
             }
+
+            // The straddling inline is the only one that needs slicing; everything after it starts
+            // past the cut and is appended whole.
+            builder.Append(inline.Start >= sourcePosition
+                ? inline.Text
+                : inline.Text[(sourcePosition - inline.Start)..]);
         }
     }
 }

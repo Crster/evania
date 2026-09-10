@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Dispatching;
 using System.Threading.Tasks;
 using Evania.Windows;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -199,8 +200,7 @@ namespace Evania.Services
 
             DataPackage dataPackage = new();
             dataPackage.SetData("image/png", stream.AsRandomAccessStream());
-            Clipboard.SetContent(dataPackage);
-            Clipboard.Flush();
+            SetClipboardContent(dataPackage);
         }
 
         /// <summary>
@@ -210,8 +210,40 @@ namespace Evania.Services
         {
             DataPackage dataPackage = new();
             dataPackage.SetText(text);
+            SetClipboardContent(dataPackage);
+        }
+
+        // Clipboard.SetContent only stages the data; the OLE clipboard is not actually
+        // handed to the OS until the calling thread pumps messages again. Calling Flush()
+        // in the same handler turn therefore fails with CLIPBRD_E_CANT_OPEN (0x800401D0)
+        // every time, because this process does not own the clipboard yet. Flush is only
+        // needed so a copy outlives the process, and Evania lives in the tray, so it is
+        // deferred to the next dispatcher turn and treated as best-effort.
+        private static void SetClipboardContent(DataPackage dataPackage)
+        {
             Clipboard.SetContent(dataPackage);
-            Clipboard.Flush();
+
+            DispatcherQueue? queue = DispatcherQueue.GetForCurrentThread();
+            if (queue is null)
+            {
+                TryFlushClipboard();
+                return;
+            }
+
+            queue.TryEnqueue(DispatcherQueuePriority.Low, TryFlushClipboard);
+        }
+
+        private static void TryFlushClipboard()
+        {
+            try
+            {
+                Clipboard.Flush();
+            }
+            catch (COMException)
+            {
+                // The content is already on the clipboard and pastes correctly; a failed
+                // Flush only means it will not survive Evania exiting. Not worth throwing.
+            }
         }
 
         /// <summary>

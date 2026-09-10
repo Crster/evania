@@ -68,7 +68,8 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
             currentNote.EditorScrollOffset,
             currentNote.EditorViewportHeight,
             currentNote.EditorViewportSourcePosition,
-            currentNote.EditorViewportAnchorOffset);
+            currentNote.EditorViewportAnchorOffset,
+            currentNote.EditorViewportTopPosition);
 
     partial void OnTitleChanged(string value)
     {
@@ -223,6 +224,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         currentNote.EditorViewportHeight = Math.Max(0, viewport.Height);
         currentNote.EditorViewportSourcePosition = viewport.SourcePosition;
         currentNote.EditorViewportAnchorOffset = viewport.AnchorOffset;
+        currentNote.EditorViewportTopPosition = viewport.TopPosition;
         ScheduleSave();
     }
 

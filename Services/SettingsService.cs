@@ -126,14 +126,21 @@ public static partial class SettingsService
             AutoSaveScreenshot = settings.AutoSaveScreenshot,
             ChatProvider = settings.ChatProvider,
             NoteSort = settings.NoteSort,
-            Bookmarks = settings.Bookmarks
-                .Where(b => !string.IsNullOrWhiteSpace(b.Url))
-                .Select(b => new BookmarkDto
-                {
-                    Title = b.Title,
-                    Url = b.Url,
-                })
-                .ToList(),
+
+            // Bookmarks are content, not configuration, so BookmarkService keeps them in the
+            // database, where they outlive an uninstall. The JSON copy is written only until that
+            // has actually happened - a session whose database never opens must not lose them -
+            // and leaving it null afterwards drops the key from the file.
+            Bookmarks = BookmarkService.PersistedToDatabase
+                ? null
+                : settings.Bookmarks
+                    .Where(b => !string.IsNullOrWhiteSpace(b.Url))
+                    .Select(b => new BookmarkDto
+                    {
+                        Title = b.Title,
+                        Url = b.Url,
+                    })
+                    .ToList(),
         };
 
         try
@@ -185,6 +192,8 @@ public static partial class SettingsService
         settings.AutoSaveScreenshot = dto.AutoSaveScreenshot;
         settings.ChatProvider = dto.ChatProvider;
         settings.NoteSort = dto.NoteSort;
+        // Legacy only. A file written before bookmarks moved into the database still carries them,
+        // and BookmarkService hands that list to the data file the first time one opens.
         settings.Bookmarks = dto.Bookmarks?
             .Where(b => !string.IsNullOrWhiteSpace(b.Url))
             .Select(b => new WebBookmark
@@ -213,6 +222,8 @@ public static partial class SettingsService
 
         public NoteSortOrder NoteSort { get; set; }
 
+        /// <summary>Read for the one-time migration into the database; never written again.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<BookmarkDto>? Bookmarks { get; set; }
     }
 

@@ -127,6 +127,11 @@ public sealed partial class EditScreenshotWindow : Window
     {
         UpdateTintOverlay();
         CenterToolbar();
+
+        // The Focus() call in the constructor runs before the content is live and is
+        // silently dropped, which left the first Ctrl+C or Ctrl+S of a session going
+        // nowhere. Claiming focus here is what actually takes.
+        RootGrid.Focus(FocusState.Programmatic);
     }
 
     private void CenterToolbar()
@@ -148,12 +153,23 @@ public sealed partial class EditScreenshotWindow : Window
 
     #region Toolbar Dragging
 
+    // The toolbar is moved with a RenderTransform rather than by rewriting Margin:
+    // Margin is a layout property, so every mouse report would re-measure the whole
+    // RootGrid (image + overlay canvas + toolbar). A translate transform skips layout
+    // entirely and is applied by the compositor.
+    private TranslateTransform? _toolbarTranslate;
+
+    private TranslateTransform ToolbarTranslate =>
+        _toolbarTranslate ??= (TranslateTransform)(ToolbarBorder.RenderTransform =
+            new TranslateTransform());
+
     private void GripIcon_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         _isDraggingToolbar = true;
         var position = e.GetCurrentPoint(RootGrid).Position;
-        _toolbarDragOffsetX = position.X - ToolbarBorder.Margin.Left;
-        _toolbarDragOffsetY = position.Y - ToolbarBorder.Margin.Top;
+        var translate = ToolbarTranslate;
+        _toolbarDragOffsetX = position.X - (ToolbarBorder.Margin.Left + translate.X);
+        _toolbarDragOffsetY = position.Y - (ToolbarBorder.Margin.Top + translate.Y);
         GripIcon.CapturePointer(e.Pointer);
     }
 
@@ -165,10 +181,9 @@ public sealed partial class EditScreenshotWindow : Window
         }
 
         var position = e.GetCurrentPoint(RootGrid).Position;
-        double newLeft = position.X - _toolbarDragOffsetX;
-        double newTop = position.Y - _toolbarDragOffsetY;
-
-        ToolbarBorder.Margin = new Thickness(newLeft, newTop, 0, 0);
+        var translate = ToolbarTranslate;
+        translate.X = position.X - _toolbarDragOffsetX - ToolbarBorder.Margin.Left;
+        translate.Y = position.Y - _toolbarDragOffsetY - ToolbarBorder.Margin.Top;
     }
 
     private void GripIcon_PointerReleased(object sender, PointerRoutedEventArgs e)
@@ -209,6 +224,9 @@ public sealed partial class EditScreenshotWindow : Window
 
         UpdateToolButtonStyles();
         UpdateTintOverlay();
+
+        // Keep keyboard focus on the grid so shortcuts keep working after a tool change.
+        RootGrid.Focus(FocusState.Programmatic);
     }
 
     private void UpdateToolButtonStyles()
@@ -272,6 +290,7 @@ public sealed partial class EditScreenshotWindow : Window
         _isDragging = true;
 
         RootGrid.CapturePointer(e.Pointer);
+        RootGrid.Focus(FocusState.Programmatic);
 
         if (_currentTool == EditToolMode.DrawBox)
         {
@@ -287,6 +306,14 @@ public sealed partial class EditScreenshotWindow : Window
         }
     }
 
+    // A high-polling-rate mouse raises PointerMoved several times per display frame.
+    // Rather than re-laying out the overlay for each report, the newest position is
+    // stashed and applied once per composition frame, so drag cost is bound to the
+    // refresh rate instead of the input rate.
+    private WinPoint _pendingDragPoint;
+    private bool _hasPendingDragPoint;
+    private bool _dragRenderingHooked;
+
     private void RootGrid_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
         if (!_isDragging)
@@ -294,41 +321,68 @@ public sealed partial class EditScreenshotWindow : Window
             return;
         }
 
-        var point = e.GetCurrentPoint(RootGrid).Position;
+        _pendingDragPoint = e.GetCurrentPoint(RootGrid).Position;
+        _hasPendingDragPoint = true;
 
+        if (!_dragRenderingHooked)
+        {
+            _dragRenderingHooked = true;
+            CompositionTarget.Rendering += OnDragRendering;
+        }
+    }
+
+    private void OnDragRendering(object? sender, object e)
+    {
+        if (!_hasPendingDragPoint)
+        {
+            return;
+        }
+
+        _hasPendingDragPoint = false;
+        ApplyDragPoint(_pendingDragPoint);
+    }
+
+    private void StopDragRendering()
+    {
+        if (_dragRenderingHooked)
+        {
+            CompositionTarget.Rendering -= OnDragRendering;
+            _dragRenderingHooked = false;
+        }
+        _hasPendingDragPoint = false;
+    }
+
+    private void ApplyDragPoint(WinPoint point)
+    {
         if (_currentTool == EditToolMode.Blur)
         {
             _blurSelectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
-        }
-        else if (_currentTool == EditToolMode.Select)
-        {
-            _selectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
-        }
-        else
-        {
-            _drawEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
-        }
-
-        if (_currentTool == EditToolMode.DrawBox)
-        {
-            UpdateDrawBoxPreview(point.X, point.Y);
-        }
-        else if (_currentTool == EditToolMode.DrawArrow)
-        {
-            UpdateArrowPreview(point.X, point.Y);
-        }
-        else if (_currentTool == EditToolMode.Blur)
-        {
             UpdateBlurPreview(point.X, point.Y);
         }
         else if (_currentTool == EditToolMode.Select)
         {
+            _selectionEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
             UpdateTintOverlay();
+        }
+        else
+        {
+            _drawEnd = new System.Drawing.Point((int)point.X, (int)point.Y);
+
+            if (_currentTool == EditToolMode.DrawBox)
+            {
+                UpdateDrawBoxPreview(point.X, point.Y);
+            }
+            else if (_currentTool == EditToolMode.DrawArrow)
+            {
+                UpdateArrowPreview(point.X, point.Y);
+            }
         }
     }
 
     private void RootGrid_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        StopDragRendering();
+
         if (!_isDragging)
         {
             return;
@@ -413,6 +467,7 @@ public sealed partial class EditScreenshotWindow : Window
         if (_currentTool == EditToolMode.Select)
         {
             // Cancel the drag that PointerPressed started on the second tap.
+            StopDragRendering();
             _isDragging = false;
             RootGrid.ReleasePointerCaptures();
 
@@ -433,16 +488,90 @@ public sealed partial class EditScreenshotWindow : Window
         int x = Math.Min(a.X, b.X);
         int y = Math.Min(a.Y, b.Y);
         return new WinRect(x, y, Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
+
+    }
+    // Pooled tint / border visuals. These are created once and then only moved and
+    // resized; adding or removing children from OverlayCanvas on every pointer move
+    // was what made dragging stutter on a high-polling-rate mouse.
+    private ShapeRectangle[]? _tintPool;
+    private ShapeRectangle[]? _borderPool; // [0]=black A, [1]=white A, [2]=black B, [3]=white B
+    private static readonly SolidColorBrush TintBrush =
+        new(WinColor.FromArgb(160, 0, 0, 0));
+    private static readonly SolidColorBrush BorderBlackBrush =
+        new(WinColor.FromArgb(255, 0, 0, 0));
+    private static readonly SolidColorBrush BorderWhiteBrush =
+        new(WinColor.FromArgb(255, 255, 255, 255));
+    // A DoubleCollection is a DependencyObject and cannot be shared between Shapes,
+    // so every dashed stroke gets its own instance (cached, never rebuilt per frame).
+    private static DoubleCollection NewDashPattern() => new() { 4, 4 };
+
+    // Dash arrays for the two black borders, created on first use so the solid/dashed
+    // toggle never allocates during a drag.
+    private readonly DoubleCollection?[] _borderDashCache = new DoubleCollection?[2];
+
+    private void EnsureTintVisuals()
+    {
+        if (_tintPool != null)
+        {
+            return;
+        }
+
+        _tintPool = new ShapeRectangle[4];
+        for (int i = 0; i < _tintPool.Length; i++)
+        {
+            var rect = new ShapeRectangle
+            {
+                Fill = TintBrush,
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false
+            };
+            Canvas.SetZIndex(rect, 0);
+            OverlayCanvas.Children.Add(rect);
+            _tintElements.Add(rect);
+            _tintPool[i] = rect;
+        }
+
+        _borderPool = new ShapeRectangle[4];
+        for (int i = 0; i < _borderPool.Length; i++)
+        {
+            bool isWhite = i % 2 == 1;
+            var border = new ShapeRectangle
+            {
+                Stroke = isWhite ? BorderWhiteBrush : BorderBlackBrush,
+                StrokeThickness = 1,
+                // The white pass is always dashed and offset by half a dash so it
+                // interleaves with the black pass (the marching-ants look).
+                StrokeDashArray = isWhite ? NewDashPattern() : null,
+                StrokeDashOffset = isWhite ? 4 : 0,
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false
+            };
+            Canvas.SetZIndex(border, 0);
+            OverlayCanvas.Children.Add(border);
+            _tintElements.Add(border);
+            _borderPool[i] = border;
+        }
+    }
+
+    private void SetTintRect(int index, double x, double y, double w, double h)
+    {
+        var rect = _tintPool![index];
+        if (w <= 0 || h <= 0)
+        {
+            rect.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        rect.Width = w;
+        rect.Height = h;
+        Canvas.SetLeft(rect, x);
+        Canvas.SetTop(rect, y);
+        rect.Visibility = Visibility.Visible;
     }
 
     private void UpdateTintOverlay()
     {
-        // Remove only tint elements, preserving drawings (boxes, arrows, text)
-        foreach (var element in _tintElements)
-        {
-            OverlayCanvas.Children.Remove(element);
-        }
-        _tintElements.Clear();
+        EnsureTintVisuals();
 
         bool isBlur = _currentTool == EditToolMode.Blur;
 
@@ -465,86 +594,61 @@ public sealed partial class EditScreenshotWindow : Window
             holeIsBlur = true;
         }
 
+        double canvasW = RootGrid.ActualWidth;
+        double canvasH = RootGrid.ActualHeight;
+
         if (holeRect == null)
         {
-            AddTintRect(0, 0, RootGrid.ActualWidth, RootGrid.ActualHeight);
-            DrawSelectionBorder(_hasSelection, _currentSelection, dashed: true);
+            SetTintRect(0, 0, 0, canvasW, canvasH);
+            SetTintRect(1, 0, 0, 0, 0);
+            SetTintRect(2, 0, 0, 0, 0);
+            SetTintRect(3, 0, 0, 0, 0);
+            SetSelectionBorder(0, _hasSelection ? _currentSelection : (WinRect?)null, dashed: true);
+            SetSelectionBorder(1, null, dashed: true);
             return;
         }
 
         var sel = holeRect.Value;
-        double canvasW = RootGrid.ActualWidth;
-        double canvasH = RootGrid.ActualHeight;
 
-        if (sel.Y > 0)
-            AddTintRect(0, 0, canvasW, sel.Y);
-        if (sel.Y + sel.Height < canvasH)
-            AddTintRect(0, sel.Y + sel.Height, canvasW, canvasH - sel.Y - sel.Height);
-        if (sel.X > 0)
-            AddTintRect(0, sel.Y, sel.X, sel.Height);
-        if (sel.X + sel.Width < canvasW)
-            AddTintRect(sel.X + sel.Width, sel.Y, canvasW - sel.X - sel.Width, sel.Height);
+        SetTintRect(0, 0, 0, canvasW, sel.Y);
+        SetTintRect(1, 0, sel.Y + sel.Height, canvasW, canvasH - sel.Y - sel.Height);
+        SetTintRect(2, 0, sel.Y, sel.X, sel.Height);
+        SetTintRect(3, sel.X + sel.Width, sel.Y, canvasW - sel.X - sel.Width, sel.Height);
 
-        DrawSelectionBorder(true, sel, dashed: holeIsBlur ? false : true);
-
-        if (holeIsBlur && _hasSelection)
-            DrawSelectionBorder(true, _currentSelection, dashed: true);
+        SetSelectionBorder(0, sel, dashed: !holeIsBlur);
+        SetSelectionBorder(1, holeIsBlur && _hasSelection ? _currentSelection : (WinRect?)null, dashed: true);
     }
 
-    private void DrawSelectionBorder(bool hasSelection, WinRect rect, bool dashed)
+    /// <summary>
+    /// Positions one black/white border pair, or hides it when <paramref name="rect"/> is null.
+    /// </summary>
+    private void SetSelectionBorder(int pair, WinRect? rect, bool dashed)
     {
-        if (!hasSelection) return;
+        var black = _borderPool![pair * 2];
+        var white = _borderPool[pair * 2 + 1];
 
-        // Black base border
-        var blackBorder = new ShapeRectangle
+        if (rect == null)
         {
-            Width = rect.Width,
-            Height = rect.Height,
-            Stroke = new SolidColorBrush(WinColor.FromArgb(255, 0, 0, 0)),
-            StrokeThickness = 1,
-            StrokeDashArray = dashed ? new DoubleCollection { 4, 4 } : null
-        };
-        Canvas.SetLeft(blackBorder, rect.X);
-        Canvas.SetTop(blackBorder, rect.Y);
-        Canvas.SetZIndex(blackBorder, 0);
-        OverlayCanvas.Children.Add(blackBorder);
-        _tintElements.Add(blackBorder);
-
-        // White dashed overlay for marching ants effect
-        var whiteBorder = new ShapeRectangle
-        {
-            Width = rect.Width,
-            Height = rect.Height,
-            Stroke = new SolidColorBrush(WinColor.FromArgb(255, 255, 255, 255)),
-            StrokeThickness = 1,
-            StrokeDashArray = new DoubleCollection { 4, 4 },
-            StrokeDashOffset = 4
-        };
-        Canvas.SetLeft(whiteBorder, rect.X);
-        Canvas.SetTop(whiteBorder, rect.Y);
-        Canvas.SetZIndex(whiteBorder, 0);
-        OverlayCanvas.Children.Add(whiteBorder);
-        _tintElements.Add(whiteBorder);
-    }
-
-    private void AddTintRect(double x, double y, double w, double h)
-    {
-        if (w <= 0 || h <= 0)
-        {
+            black.Visibility = Visibility.Collapsed;
+            white.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var rect = new ShapeRectangle
+        var r = rect.Value;
+        var wanted = dashed ? (_borderDashCache[pair] ??= NewDashPattern()) : null;
+        if (!ReferenceEquals(black.StrokeDashArray, wanted))
         {
-            Width = w,
-            Height = h,
-            Fill = new SolidColorBrush(WinColor.FromArgb(160, 0, 0, 0))
-        };
-        Canvas.SetLeft(rect, x);
-        Canvas.SetTop(rect, y);
-        Canvas.SetZIndex(rect, 0);
-        OverlayCanvas.Children.Add(rect);
-        _tintElements.Add(rect);
+            black.StrokeDashArray = wanted;
+        }
+
+        foreach (var border in new[] { black, white })
+        {
+            border.Width = r.Width;
+            border.Height = r.Height;
+            Canvas.SetLeft(border, r.X);
+            Canvas.SetTop(border, r.Y);
+            border.Visibility = Visibility.Visible;
+        }
     }
 
     #endregion
@@ -1244,6 +1348,26 @@ public sealed partial class EditScreenshotWindow : Window
 
     #region Keyboard Shortcuts
 
+    /// <summary>
+    /// True while either Control key is held. CoreVirtualKeyStates is a [Flags] enum
+    /// (None=0, Down=1, Locked=2), so the state often arrives as Down|Locked and an
+    /// equality test against Down alone silently misses it — that is what made Ctrl+C
+    /// and Ctrl+S need several presses. Both Left and Right Control are checked because
+    /// the aggregate VirtualKey.Control state is not always reported for the side keys.
+    /// </summary>
+    private static bool IsControlDown()
+    {
+        return IsKeyDown(WinVirtualKey.Control)
+            || IsKeyDown(WinVirtualKey.LeftControl)
+            || IsKeyDown(WinVirtualKey.RightControl);
+    }
+
+    private static bool IsKeyDown(WinVirtualKey key)
+    {
+        return (InputKeyboardSource.GetKeyStateForCurrentThread(key) & CoreVirtualKeyStates.Down)
+            == CoreVirtualKeyStates.Down;
+    }
+
     private void RootGrid_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (_isInTextInputMode)
@@ -1330,8 +1454,7 @@ public sealed partial class EditScreenshotWindow : Window
                 break;
 
             case WinVirtualKey.C:
-                if (InputKeyboardSource.GetKeyStateForCurrentThread(WinVirtualKey.Control)
-                    is CoreVirtualKeyStates.Down)
+                if (IsControlDown())
                 {
                     if (_hasSelection)
                     {
@@ -1343,8 +1466,7 @@ public sealed partial class EditScreenshotWindow : Window
                 break;
 
             case WinVirtualKey.S:
-                if (InputKeyboardSource.GetKeyStateForCurrentThread(WinVirtualKey.Control)
-                    is CoreVirtualKeyStates.Down)
+                if (IsControlDown())
                 {
                     _ = SaveAndCloseAsync();
                     e.Handled = true;

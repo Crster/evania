@@ -34,6 +34,12 @@ public sealed class NoteDocument
 
     public double EditorViewportAnchorOffset { get; set; }
 
+    /// <summary>
+    /// Document offset of the first character visible at the top of the editor viewport. Drives the
+    /// note list preview so it opens on the line the reader left off at. -1 when never scrolled.
+    /// </summary>
+    public int EditorViewportTopPosition { get; set; } = -1;
+
     public List<NoteAttachment> Attachments { get; set; } = new();
 }
 
@@ -74,8 +80,6 @@ public partial class NoteListItem : ObservableObject
     public required string DisplayTitle { get; init; }
 
     public required string Preview { get; init; }
-
-    public required string PreviewMarkdown { get; init; }
 
     public required string TimeText { get; init; }
 }

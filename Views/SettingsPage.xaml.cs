@@ -72,6 +72,17 @@ public sealed partial class SettingsPage : Page
         InitializeComponent();
         DataContext = ViewModel;
         ViewModel.RequestDatabasePasswordAsync = PromptForDatabasePasswordAsync;
+
+        // The password box cannot be two-way bound to a secret, so a password the view model picked
+        // up elsewhere - the prompt dialog, most of all - has to be pushed back into the control.
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SettingsPageViewModel.CandidatePassword) &&
+                PasswordBox.Password != ViewModel.CandidatePassword)
+            {
+                PasswordBox.Password = ViewModel.CandidatePassword;
+            }
+        };
     }
 
     private void SettingsPage_Loaded(object sender, RoutedEventArgs e)
@@ -271,7 +282,7 @@ public sealed partial class SettingsPage : Page
         ViewModel.CandidatePassword = PasswordBox.Password;
     }
 
-    private async Task<string?> PromptForDatabasePasswordAsync(string path)
+    private async Task<string?> PromptForDatabasePasswordAsync(string path, bool previousWasRejected)
     {
         PasswordBox input = new()
         {
@@ -281,18 +292,24 @@ public sealed partial class SettingsPage : Page
 
         ContentDialog dialog = new()
         {
-            Title = "Password required",
+            Title = previousWasRejected ? "Incorrect password" : "Password required",
             Content = new StackPanel
             {
                 Spacing = 8,
                 Children =
                 {
-                    new TextBlock { Text = "This database is protected. Enter its password to use it." },
+                    new TextBlock
+                    {
+                        Text = previousWasRejected
+                            ? "That password did not open this database. Try again, or cancel to leave the current one in place."
+                            : "This database is encrypted. Enter its password to open it.",
+                        TextWrapping = TextWrapping.Wrap
+                    },
                     new TextBlock { Text = path, FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap },
                     input
                 }
             },
-            PrimaryButtonText = "Use password",
+            PrimaryButtonText = previousWasRejected ? "Try again" : "Use password",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot

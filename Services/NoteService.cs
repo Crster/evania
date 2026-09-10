@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Evania.Controls.MarkdownEditor;
 using Evania.Models;
@@ -42,7 +43,6 @@ public static class NoteService
                 Id = note.Id,
                 DisplayTitle = GetDisplayTitle(note),
                 Preview = CreatePreview(note),
-                PreviewMarkdown = CreatePreviewMarkdown(note),
                 TimeText = sortByCreated
                     ? "Created " + RelativeTimeText(note.CreatedAt)
                     : RelativeTimeText(note.UpdatedAt),
@@ -182,23 +182,68 @@ public static class NoteService
         };
     }
 
+    private const int PreviewMaxLength = 1024;
+
+    /// <summary>
+    /// Builds the list preview starting at the line that sat at the top of the editor viewport, so
+    /// coming back to the list shows the part of the note the reader left off at, not always the top.
+    /// </summary>
+    /// <remarks>
+    /// The projection runs over the same source the editor loads - markdown when there is any, and
+    /// otherwise the stored plain text of a pre-markdown note - so the saved offset indexes the very
+    /// string it was captured against and legacy notes anchor just as well as new ones.
+    /// </remarks>
     private static string CreatePreview(NoteDocument note)
     {
-        string preview = CreatePreviewMarkdown(note);
-        return preview.Length <= 1024 ? preview : $"{preview[..1021]}...";
-    }
-
-    private static string CreatePreviewMarkdown(NoteDocument note)
-    {
-        string source = !string.IsNullOrWhiteSpace(note.Markdown)
-            ? MarkdownTextUtilities.ToPlainText(note.Markdown, 0)
+        string markdown = !string.IsNullOrWhiteSpace(note.Markdown)
+            ? note.Markdown
             : note.PlainText ?? string.Empty;
 
-        string preview = string.Join(
-            " ",
-            source.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        string source = MarkdownTextUtilities.ToPlainText(markdown, Math.Max(0, note.EditorViewportTopPosition));
+        string preview = NormalizePreviewText(source);
 
-        return preview.Length <= 1024 ? preview : $"{preview[..1021]}...";
+        return preview.Length <= PreviewMaxLength ? preview : $"{preview[..(PreviewMaxLength - 3)]}...";
+    }
+
+    /// <summary>
+    /// Collapses runs of spaces and blank lines but keeps the line breaks: the preview renders in a
+    /// multi-line TextBlock, so paragraph structure is what makes it readable at a glance.
+    /// </summary>
+    private static string NormalizePreviewText(string source)
+    {
+        var builder = new StringBuilder();
+        bool pendingBlankLine = false;
+        bool wroteLine = false;
+
+        foreach (string rawLine in source.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+        {
+            string line = string.Join(
+                " ",
+                rawLine.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+            if (line.Length == 0)
+            {
+                // Leading blanks are dropped entirely; interior runs collapse to one empty line.
+                pendingBlankLine = wroteLine;
+                continue;
+            }
+
+            if (wroteLine)
+            {
+                builder.Append('\n');
+
+                if (pendingBlankLine)
+                {
+                    builder.Append('\n');
+                }
+            }
+
+            builder.Append(line);
+            pendingBlankLine = false;
+            wroteLine = true;
+        }
+
+        return builder.ToString();
     }
 
     private static NoteDocument? Normalize(NoteDocument? note)

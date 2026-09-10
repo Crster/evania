@@ -77,7 +77,14 @@ public static class DatabaseService
 
         settings.DatabasePassword = password;
 
-        return Open(path, password);
+        DatabaseStatus status = Open(path, password);
+
+        if (status.Connected)
+        {
+            BookmarkService.SyncWithDatabase();
+        }
+
+        return status;
     }
 
     private static string EnsurePersistentDatabasePath(AppSettings settings)
@@ -132,6 +139,71 @@ public static class DatabaseService
         string marker = $"{Path.DirectorySeparatorChar}AppData{Path.DirectorySeparatorChar}Local{Path.DirectorySeparatorChar}Packages{Path.DirectorySeparatorChar}";
 
         return fullPath.Contains(marker, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The plaintext marker LiteDB writes into the header page of an unencrypted data file. An
+    /// encrypted file starts with an AES salt page instead, so the marker is simply not there.
+    /// </summary>
+    private static readonly byte[] LiteDbHeaderMarker =
+        System.Text.Encoding.ASCII.GetBytes("** This is a LiteDB file **");
+
+    /// <summary>
+    /// Reads the header of the file at <paramref name="path"/> and reports whether it is an
+    /// encrypted LiteDB database. This answers the question before anything is opened, so the UI can
+    /// say "this one needs a password" instead of waiting for an open to fail and reading the
+    /// exception text. A missing, empty or unreadable file is reported as not encrypted.
+    /// </summary>
+    public static bool IsEncryptedFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
+            byte[] header = new byte[64];
+            int read = stream.Read(header, 0, header.Length);
+
+            // Too short to be either kind of data file - let the open attempt produce the real error.
+            if (read < header.Length)
+            {
+                return false;
+            }
+
+            return header.AsSpan(0, read).IndexOf(LiteDbHeaderMarker) < 0;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when a password for this file is already known - either it is the live connection's own
+    /// file, or Windows Credential Manager still holds its password. Used to decide whether an
+    /// encrypted file the user picked actually needs anything from them.
+    /// </summary>
+    public static bool HasKnownPasswordFor(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        if (SamePath(openedPath, path) && !string.IsNullOrEmpty(openedPassword))
+        {
+            return true;
+        }
+
+        return !string.IsNullOrEmpty(ReadPassword(path));
     }
 
     public static DatabaseStatus Open(string path, string? password)
@@ -273,6 +345,53 @@ public static class DatabaseService
         }
     }
 
+    /// <summary>
+    /// The pinned webpages, in sidebar order. Answers with an empty list rather than throwing when
+    /// nothing is open: bookmarks are read during startup, which races the background open.
+    /// </summary>
+    public static IReadOnlyList<BookmarkDocument> GetBookmarks()
+    {
+        lock (Gate)
+        {
+            if (engine is null)
+            {
+                return [];
+            }
+
+            return engine.GetCollection<BookmarkDocument>("bookmarks")
+                .FindAll()
+                .OrderBy(bookmark => bookmark.SortOrder)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Makes the stored bookmarks exactly <paramref name="bookmarks"/>. The list is written whole
+    /// because sidebar order is a property of the list rather than of any one row, so an add or a
+    /// remove renumbers everything after it anyway.
+    /// </summary>
+    /// <returns>False when nothing is open, so the caller can keep its fallback copy.</returns>
+    public static bool ReplaceBookmarks(IReadOnlyList<BookmarkDocument> bookmarks)
+    {
+        lock (Gate)
+        {
+            if (engine is null)
+            {
+                return false;
+            }
+
+            ILiteCollection<BookmarkDocument> collection = engine.GetCollection<BookmarkDocument>("bookmarks");
+            collection.DeleteAll();
+
+            if (bookmarks.Count > 0)
+            {
+                collection.Insert(bookmarks);
+            }
+
+            return true;
+        }
+    }
+
     public static IReadOnlyList<PasswordDocument> GetPasswords()
     {
         lock (Gate)
@@ -328,6 +447,23 @@ public static class DatabaseService
     {
         lock (Gate)
         {
+            // Everything below assumes a path the file APIs will accept. A blank or malformed one
+            // used to throw out of here - past the try that guards the rest of the work, and past
+            // the caller's await - so it arrived as an unhandled exception rather than as the
+            // failed status every other bad input produces.
+            // Status is deliberately left alone: nothing has been closed, so the connection the
+            // status line describes is still the live one.
+            if (!IsUsablePath(path))
+            {
+                return new DatabaseStatus(
+                    false,
+                    wantEncrypted,
+                    string.IsNullOrWhiteSpace(path)
+                        ? "Enter the path of a database file."
+                        : "That is not a valid file path.",
+                    0);
+            }
+
             AppSettings settings = SettingsService.Current;
             string? sourcePath = openedPath ?? settings.DatabasePath;
             bool pathChanged = !SamePath(sourcePath, path);
@@ -398,6 +534,10 @@ public static class DatabaseService
                 {
                     DatabaseCredentialVault.Delete(sourcePath!);
                 }
+
+                // The bookmarks now in view belong to whichever file this ended up on, so they are
+                // re-read here rather than carried over from the connection that just closed.
+                BookmarkService.SyncWithDatabase();
 
                 return opened;
             }
@@ -588,6 +728,30 @@ public static class DatabaseService
     }
 
     private static bool PasswordsMatch(string? a, string? b) => a is null ? b is null : a == b;
+
+    /// <summary>
+    /// Whether the file APIs will accept this path at all. <see cref="Path.GetFullPath(string)"/>
+    /// throws on a blank or malformed one, and it is reached from several places here before any
+    /// try block, so the question is answered once up front.
+    /// </summary>
+    private static bool IsUsablePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path).Length > 0 && Path.GetFileName(path).Length > 0;
+        }
+        catch (Exception)
+        {
+            // ArgumentException, PathTooLongException, NotSupportedException - all mean the same
+            // thing to the caller.
+            return false;
+        }
+    }
 
     private static bool SamePath(string? a, string b) =>
         a is not null && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);

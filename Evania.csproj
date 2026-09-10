@@ -51,19 +51,19 @@
 
 	<!-- Publish Properties -->
 	<PropertyGroup>
-		<PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
-		<PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-		<PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-		<PublishTrimmed Condition="'$(Configuration)' != 'Debug'">False</PublishTrimmed>
+		<!-- Not conditioned on $(Configuration): restore evaluates as Debug, and a false
+		     value there means the Crossgen2 pack never gets restored, so a Release
+		     publish fails with "a valid runtime package was not found". -->
+		<PublishReadyToRun>True</PublishReadyToRun>
+		<PublishTrimmed>False</PublishTrimmed>
 		<PackageCertificateKeyFile>Evania_TemporaryKey.pfx</PackageCertificateKeyFile>
 		<AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
-		<GenerateAppInstallerFile>True</GenerateAppInstallerFile>
+		<GenerateAppInstallerFile>False</GenerateAppInstallerFile>
 		<AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
 		<AppxAutoIncrementPackageRevision>True</AppxAutoIncrementPackageRevision>
 		<GenerateTestArtifacts>False</GenerateTestArtifacts>
 		<UapAppxPackageBuildMode>StoreUpload</UapAppxPackageBuildMode>
 		<AppxBundle>Never</AppxBundle>
-		<AppInstallerUri>\\Installer</AppInstallerUri>
 		<HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
 	</PropertyGroup>
 

@@ -115,6 +115,14 @@
                                 Click="Browse_Click" />
                         </Grid>
 
+                        <!-- Says a protected file is protected before Apply is pressed -->
+                        <InfoBar
+                            Severity="Informational"
+                            IsOpen="{x:Bind ViewModel.HasEncryptionNotice, Mode=OneWay}"
+                            Message="{x:Bind ViewModel.EncryptionNotice, Mode=OneWay}"
+                            IsClosable="False"
+                            Margin="0,12,0,0" />
+
                         <!-- Live state of the file at that path -->
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
                             <FontIcon Glyph="&#xE8F2;" FontSize="13" Opacity="0.55" VerticalAlignment="Center" />

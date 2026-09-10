@@ -13,11 +13,19 @@ using Colors = Microsoft.UI.Colors;
 
 namespace Evania.Controls.MarkdownEditor;
 
+/// <param name="SourcePosition">Start of the block straddling the top of the viewport; the anchor scrolling is restored from.</param>
+/// <param name="AnchorOffset">Distance from that block's top to the top of the viewport.</param>
+/// <param name="TopPosition">
+/// Document offset of the first character actually visible at the top of the viewport. Finer than
+/// <paramref name="SourcePosition"/>, which only resolves to a whole block, so the note list preview
+/// can begin on the exact line the reader was looking at rather than at the top of its paragraph.
+/// </param>
 public readonly record struct MarkdownEditorViewport(
     double ScrollOffset,
     double Height,
     int SourcePosition,
-    double AnchorOffset);
+    double AnchorOffset,
+    int TopPosition = -1);
 
 /// <summary>
 /// A markdown WYSIWYG editor implemented from scratch on Win2D.
@@ -211,7 +219,8 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             scroller.VerticalOffset,
             scroller.ViewportHeight,
             anchor?.Block.Start ?? -1,
-            anchor is null ? 0 : anchor.Y - scroller.VerticalOffset);
+            anchor is null ? 0 : anchor.Y - scroller.VerticalOffset,
+            CaptureTopPosition(anchor, (float)scroller.VerticalOffset));
         MarkdownEditorLog.Viewport($"captured {FormatViewport(viewport)}, extent={scroller.ExtentHeight:F1}, blocks={engine.Blocks.Count}, ready={canvas.ReadyToDraw}");
         return viewport;
     }
@@ -260,8 +269,38 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         MarkdownEditorLog.Viewport($"restore applied target={target:F1}, accepted={accepted}, reached={reached}, actual={scroller.VerticalOffset:F1}, extent={scroller.ExtentHeight:F1}, anchorY={anchor?.Y:F1}");
     }
 
+    /// <summary>
+    /// Resolves the document offset of the first character visible at <paramref name="viewportTop"/>.
+    /// </summary>
+    /// <remarks>
+    /// Hit-testing at the block's left content edge lands on the first character of whichever wrapped
+    /// line crosses the viewport top, so a paragraph the reader is halfway through reports that line
+    /// rather than the paragraph's start. Blocks with no text region (images, tables) have no lines to
+    /// resolve, so they fall back to their own start.
+    /// </remarks>
+    private static int CaptureTopPosition(BlockLayout? anchor, float viewportTop)
+    {
+        if (anchor is null)
+        {
+            return -1;
+        }
+
+        if (anchor.Text is not { } region)
+        {
+            return anchor.Block.Start;
+        }
+
+        // Region origins are block-relative (BlockLayout.Y is added by each consumer), so the
+        // viewport top has to come down into block space before it can be clamped into the text.
+        float localY = viewportTop - anchor.Y;
+        float y = Math.Clamp(localY, region.Origin.Y, region.Origin.Y + Math.Max(0, region.Height - 1));
+        int position = region.HitTest(new Vector2(region.Origin.X, y));
+
+        return Math.Clamp(position, anchor.Block.Start, anchor.Block.End);
+    }
+
     private static string FormatViewport(MarkdownEditorViewport viewport) =>
-        $"offset={viewport.ScrollOffset:F1}, height={viewport.Height:F1}, source={viewport.SourcePosition}, anchorOffset={viewport.AnchorOffset:F1}";
+        $"offset={viewport.ScrollOffset:F1}, height={viewport.Height:F1}, source={viewport.SourcePosition}, anchorOffset={viewport.AnchorOffset:F1}, top={viewport.TopPosition}";
 
     private static void OnMarkdownPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {

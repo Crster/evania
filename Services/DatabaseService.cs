@@ -250,6 +250,32 @@ public static class DatabaseService
         }
     }
 
+    /// <summary>
+    /// Folds the write-ahead log into the data file. LiteDB commits into <c>Evania.db-log</c> and
+    /// only merges those pages at a checkpoint - by default once the log passes a thousand pages, or
+    /// on dispose - so without this the data file alone can sit days behind, and an exit that never
+    /// reaches <see cref="Close"/> leaves the log as the only record. Called when the user navigates
+    /// off a page, which is the point where whatever they were editing has finished saving.
+    /// <para>
+    /// Safe to call when nothing is open, and deliberately quiet on failure: a checkpoint that loses
+    /// a race with a close or a rebuild is not something the caller can act on, and the next
+    /// navigation asks again.
+    /// </para>
+    /// </summary>
+    public static void Checkpoint()
+    {
+        lock (Gate)
+        {
+            try
+            {
+                engine?.Checkpoint();
+            }
+            catch (Exception)
+            {
+            }
+        }
+    }
+
     public static IReadOnlyList<NoteDocument> GetNotes()
     {
         lock (Gate)
@@ -307,6 +333,7 @@ public static class DatabaseService
                 Key = stateKey,
                 ScrollOffset = Math.Max(0, offset),
             });
+
         }
     }
 
@@ -387,6 +414,7 @@ public static class DatabaseService
             {
                 collection.Insert(bookmarks);
             }
+
 
             return true;
         }
@@ -652,6 +680,7 @@ public static class DatabaseService
 
     private static void FlushAndClose()
     {
+
         if (engine is null)
         {
             return;

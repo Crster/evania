@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Evania.Services;
 using Evania.ViewModels;
 using Evania.Views;
@@ -132,7 +133,14 @@ public sealed partial class MainWindow : Window
             // what keeps the dispatcher queue - and with it the tray icon and the shortcut - running.
             args.Cancel = true;
             sender.Hide();
+
+            return;
         }
+
+        // This close is real, and with close-to-tray off it is the usual way out - the tray's Exit
+        // entry is not involved, so App.Quit never runs and nothing else would have closed the
+        // database. Without this the log file kept the last writes and Evania.db stayed behind them.
+        DatabaseService.Close();
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -195,6 +203,16 @@ public sealed partial class MainWindow : Window
 
     private void Navigate(Type pageType, object? parameter = null)
     {
+        // Leaving a page is the moment to fold LiteDB's log into the data file: whatever the page
+        // was editing has finished saving by now, and it is the last chance before the window might
+        // be closed or killed. Re-selecting the page already shown gets here too, but a checkpoint
+        // with nothing in the log costs nothing, so that is not worth a second same-page test.
+        // Off the UI thread because it is disk work and it queues behind any save still running.
+        if (NavigationPresenter.Content is not null)
+        {
+            _ = Task.Run(DatabaseService.Checkpoint);
+        }
+
         if (pageType == typeof(BookmarkPage) && parameter is string bookmarkUrl)
         {
             if (!_bookmarkPages.TryGetValue(bookmarkUrl, out BookmarkPage? page))

@@ -488,8 +488,11 @@ public sealed partial class MarkdownEditor
         => SetSelection(extend ? new TextRange(selection.Start, position) : TextRange.Caret(position));
 
     /// <summary>
-    /// Finds block-level markdown syntax that must remain indivisible while editing. Inline syntax is
-    /// deliberately excluded because emphasis, links, and similar spans remain directly editable.
+    /// Finds block-level markdown syntax that must remain indivisible while editing: only the markers
+    /// that stay hidden even on the block holding the caret (list markers, which the gutter glyph
+    /// stands in for, plus rules and images). Heading and quote markers are deliberately excluded
+    /// because they are revealed - and therefore directly editable - while the caret is on their
+    /// block, as is all inline syntax.
     /// </summary>
     private bool TryGetAtomicBlockSyntax(int position, out TextRange syntax)
     {
@@ -505,9 +508,7 @@ public sealed partial class MarkdownEditor
                 continue;
             }
 
-            bool isAtomicBlock = block.Kind is MarkdownBlockKind.Heading
-                or MarkdownBlockKind.Quote
-                or MarkdownBlockKind.BulletItem
+            bool isAtomicBlock = block.Kind is MarkdownBlockKind.BulletItem
                 or MarkdownBlockKind.OrderedItem
                 or MarkdownBlockKind.TaskItem
                 or MarkdownBlockKind.ThematicBreak
@@ -536,6 +537,18 @@ public sealed partial class MarkdownEditor
         return direction < 0 ? syntax.Min : syntax.Max;
     }
 
+    /// <summary>
+    /// True when the block owning <paramref name="position"/> is the one holding the caret, so its
+    /// syntax is at least partly visible. Any syntax character the caret could directly delete or
+    /// type at necessarily sits in the group containing the caret, which is exactly what that block
+    /// reveals, so a block-level check is enough for the edit guards.
+    /// </summary>
+    private bool IsSyntaxRevealedAt(int position)
+    {
+        BlockLayout? block = engine.FindBlockFor(position);
+        return block is not null && block.Contains(position) && block.ShowsSyntax;
+    }
+
     private TextRange ExpandSelectionOverAtomicBlockSyntax(TextRange range)
     {
         if (range.IsEmpty)
@@ -553,9 +566,7 @@ public sealed partial class MarkdownEditor
             }
 
             MarkdownInline marker = block.Inlines[0];
-            bool isAtomicBlock = block.Kind is MarkdownBlockKind.Heading
-                or MarkdownBlockKind.Quote
-                or MarkdownBlockKind.BulletItem
+            bool isAtomicBlock = block.Kind is MarkdownBlockKind.BulletItem
                 or MarkdownBlockKind.OrderedItem
                 or MarkdownBlockKind.TaskItem
                 or MarkdownBlockKind.ThematicBreak
@@ -953,6 +964,13 @@ public sealed partial class MarkdownEditor
             return false;
         }
 
+        // The punctuation is visible on the block being edited, so the user can delete it one
+        // character at a time instead of losing the whole link.
+        if (IsSyntaxRevealedAt(delStart))
+        {
+            return false;
+        }
+
         if (!isSyntax && visibleLength > 1)
         {
             return false;
@@ -968,6 +986,12 @@ public sealed partial class MarkdownEditor
     private bool TryRemoveLinkGroupForward()
     {
         if (!TryGetLinkGroupAt(selection.End, out int groupStart, out int groupEnd, out bool isSyntax, out int visibleLength))
+        {
+            return false;
+        }
+
+        // Visible punctuation is deleted character by character, mirroring the backspace case.
+        if (IsSyntaxRevealedAt(selection.End))
         {
             return false;
         }
@@ -997,6 +1021,13 @@ public sealed partial class MarkdownEditor
         {
             BlockLayout? layout = engine.FindBlockFor(probe);
             if (layout is null)
+            {
+                continue;
+            }
+
+            // On a revealed block the punctuation is visible text, so a selection deletes exactly
+            // what it covers instead of expanding to the whole link.
+            if (layout.ShowsSyntax)
             {
                 continue;
             }

@@ -266,6 +266,13 @@ public sealed partial class MarkdownEditor
             return;
         }
 
+        // On the block holding the caret, every syntax character the caret could touch is revealed
+        // (the group under the caret always is), so an insertion there cannot split hidden markdown.
+        if (layout.ShowsSyntax)
+        {
+            return;
+        }
+
         // If the caret is inside any link inline, move past the entire link group
         // so the link syntax is not split.
         IReadOnlyList<MarkdownInline> inlines = layout.Block.Inlines;

@@ -313,6 +313,13 @@ internal sealed class BlockLayout
     /// <summary>Marker glyph drawn to the left of list items (bullet, ordinal or checkbox).</summary>
     public string? Marker { get; set; }
 
+    /// <summary>
+    /// True when this is the block holding the caret, so its block marker and the caret-hosting
+    /// inline group render as text. Consumers use it to tell revealed syntax (editable character by
+    /// character) from the hidden kind editing guards still have to protect.
+    /// </summary>
+    public bool ShowsSyntax { get; init; }
+
     public CanvasTextLayout? MarkerLayout { get; set; }
 
     /// <summary>Width of the box reserved for an image block; 0 until an image block is laid out.</summary>
@@ -349,10 +356,12 @@ internal sealed class TableCellLayout
 /// </summary>
 /// <remarks>
 /// The engine is the only place that knows how markdown maps to glyphs. It drops the syntax spans
-/// from the drawn text so every block renders formatted (the caret maps to the nearest visible
-/// character when it sits inside hidden punctuation), builds a <see cref="CanvasTextLayout"/> per
-/// block with per-span character formatting,
-/// and stacks the blocks vertically. Results are cached until the text or width change,
+/// from the drawn text so every block renders formatted, except on the block holding the caret,
+/// whose block marker and caret-hosting inline group are rendered muted so they can be edited in
+/// place (the caret maps to the nearest visible character when it sits inside punctuation hidden
+/// elsewhere). It builds a
+/// <see cref="CanvasTextLayout"/> per block with per-span character formatting,
+/// and stacks the blocks vertically. Results are cached until the text, width or active block change,
 /// because rebuilding layouts is the expensive part of typing.
 /// </remarks>
 internal sealed class MarkdownLayoutEngine : IDisposable
@@ -363,6 +372,8 @@ internal sealed class MarkdownLayoutEngine : IDisposable
     private string? cachedText;
     private float cachedWidth = -1;
     private int cachedEditModeTableStart = -1;
+    private int cachedActiveBlockStart = -1;
+    private string? cachedRevealSignature;
 
     public MarkdownLayoutEngine(EditorTheme theme)
     {
@@ -385,34 +396,131 @@ internal sealed class MarkdownLayoutEngine : IDisposable
         cachedText = null;
         cachedWidth = -1;
         cachedEditModeTableStart = -1;
+        cachedActiveBlockStart = -1;
+        cachedRevealSignature = null;
     }
 
     /// <summary>
     /// Rebuilds the layout if anything that affects it changed. Returns true when a rebuild happened.
     /// <paramref name="editModeTableStart"/> is the source start of the table being edited as raw
     /// markdown (toggled by the toolbar), or -1 when every table renders as a grid.
+    /// <paramref name="activePosition"/> is the caret's document offset, or -1 to keep every block in
+    /// its formatted preview; the block containing it reveals its block marker, plus the inline group
+    /// (a delimiter pair and what it wraps) the caret sits inside.
     /// </summary>
-    public bool Update(ICanvasResourceCreator resourceCreator, MarkdownDocument document, float availableWidth, int editModeTableStart)
+    public bool Update(
+        ICanvasResourceCreator resourceCreator,
+        MarkdownDocument document,
+        float availableWidth,
+        int editModeTableStart,
+        int activePosition)
     {
         string text = document.Text;
         IReadOnlyList<MarkdownBlock> parsed = MarkdownParser.Parse(document);
+        int activeBlockStart = FindActiveBlockStart(parsed, activePosition);
+        string revealSignature = FindRevealSignature(parsed, activeBlockStart, activePosition);
 
         if (cachedText == text
             && Math.Abs(cachedWidth - availableWidth) < 0.5f
-            && cachedEditModeTableStart == editModeTableStart)
+            && cachedEditModeTableStart == editModeTableStart
+            && cachedActiveBlockStart == activeBlockStart
+            && cachedRevealSignature == revealSignature)
         {
             return false;
         }
 
-        Build(resourceCreator, parsed, availableWidth, editModeTableStart);
+        Build(resourceCreator, parsed, availableWidth, editModeTableStart, activeBlockStart, activePosition);
 
         cachedText = text;
         cachedWidth = availableWidth;
         cachedEditModeTableStart = editModeTableStart;
+        cachedActiveBlockStart = activeBlockStart;
+        cachedRevealSignature = revealSignature;
         return true;
     }
 
-    private void Build(ICanvasResourceCreator resourceCreator, IReadOnlyList<MarkdownBlock> parsed, float availableWidth, int editModeTableStart)
+    /// <summary>
+    /// Resolves the start of the block containing <paramref name="position"/> from a fresh parse, so
+    /// the reveal follows the caret even while the previous layout's blocks are stale. Positions
+    /// inside the line break belong to the block above it, which is where the caret blinks from.
+    /// </summary>
+    private static int FindActiveBlockStart(IReadOnlyList<MarkdownBlock> parsed, int position)
+    {
+        if (position < 0)
+        {
+            return -1;
+        }
+
+        foreach (MarkdownBlock block in parsed)
+        {
+            if (block.Start > position)
+            {
+                break;
+            }
+
+            if (block.Contains(position))
+            {
+                return block.Start;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Canonical description of which inline groups the caret reveals, used as a layout cache key.
+    /// Moving the caret within one group or through unmarked text keeps the signature unchanged, so
+    /// no rebuild happens; crossing into another group's range produces a different one.
+    /// </summary>
+    private static string FindRevealSignature(IReadOnlyList<MarkdownBlock> parsed, int activeBlockStart, int position)
+    {
+        if (activeBlockStart < 0)
+        {
+            return string.Empty;
+        }
+
+        MarkdownBlock? active = null;
+        foreach (MarkdownBlock block in parsed)
+        {
+            if (block.Start == activeBlockStart)
+            {
+                active = block;
+                break;
+            }
+        }
+
+        if (active is null)
+        {
+            return string.Empty;
+        }
+
+        var revealed = new List<string>();
+        IReadOnlyList<MarkdownInline> inlines = active.Inlines;
+        for (int i = 0; i < inlines.Count; i++)
+        {
+            if (!inlines[i].IsSyntax || IsBlockMarker(active, inlines[i]))
+            {
+                continue;
+            }
+
+            (int start, int end) = GetInlineGroupRange(inlines, i);
+            if (position >= start && position <= end)
+            {
+                revealed.Add($"{start}:{end}");
+            }
+        }
+
+        revealed.Sort(StringComparer.Ordinal);
+        return string.Join(";", revealed);
+    }
+
+    private void Build(
+        ICanvasResourceCreator resourceCreator,
+        IReadOnlyList<MarkdownBlock> parsed,
+        float availableWidth,
+        int editModeTableStart,
+        int activeBlockStart,
+        int activePosition)
     {
         DisposeBlocks();
 
@@ -423,9 +531,9 @@ internal sealed class MarkdownLayoutEngine : IDisposable
             {
                 MarkdownBlockKind.Table => BlockRenderers.BuildTable(resourceCreator, theme, block, availableWidth, block.Start == editModeTableStart),
                 MarkdownBlockKind.Image => BlockRenderers.BuildImage(block, availableWidth, ImageNaturalSize),
-                MarkdownBlockKind.CodeBlock => BlockRenderers.BuildCodeBlock(resourceCreator, theme, block, availableWidth),
+                MarkdownBlockKind.CodeBlock => BlockRenderers.BuildCodeBlock(resourceCreator, theme, block, availableWidth, block.Start == activeBlockStart),
                 MarkdownBlockKind.ThematicBreak => BlockRenderers.BuildThematicBreak(theme, block),
-                _ => BuildTextBlock(resourceCreator, block, availableWidth),
+                _ => BuildTextBlock(resourceCreator, block, availableWidth, block.Start == activeBlockStart, activePosition),
             };
 
             layout.Y = y;
@@ -447,9 +555,16 @@ internal sealed class MarkdownLayoutEngine : IDisposable
     }
 
     /// <summary>
-    /// Builds a paragraph, heading, quote or list item.
+    /// Builds a paragraph, heading, quote or list item. On the block holding the caret the block
+    /// marker (heading/quote) renders muted for the whole line, and the inline group the caret sits
+    /// inside reveals its delimiter pair, so markers can be read, selected and edited in place.
     /// </summary>
-    internal BlockLayout BuildTextBlock(ICanvasResourceCreator resourceCreator, MarkdownBlock block, float availableWidth)
+    internal BlockLayout BuildTextBlock(
+        ICanvasResourceCreator resourceCreator,
+        MarkdownBlock block,
+        float availableWidth,
+        bool revealSyntax,
+        int caretPosition)
     {
         float indent = BlockRenderers.GetIndent(theme, block);
         float contentWidth = Math.Max(40f, availableWidth - indent);
@@ -459,10 +574,11 @@ internal sealed class MarkdownLayoutEngine : IDisposable
             Block = block,
             ContentX = indent,
             ContentWidth = contentWidth,
+            ShowsSyntax = revealSyntax,
         };
 
         (string rendered, List<LayoutSegment> segments, List<(int Start, int Length, MarkdownInline Inline)> runs) =
-            ComposeRuns(block);
+            ComposeRuns(block, revealSyntax, caretPosition);
 
         CanvasTextFormat format = CreateFormat(block);
         var textLayout = new CanvasTextLayout(resourceCreator, rendered, format, contentWidth, 0f)
@@ -486,23 +602,29 @@ internal sealed class MarkdownLayoutEngine : IDisposable
 
     /// <summary>
     /// Flattens a block's inline spans into the string that will actually be drawn, dropping the
-    /// markdown punctuation so every block stays formatted even while the caret is inside it.
+    /// markdown punctuation so every block stays formatted. On the block holding the caret the
+    /// revealed spans (block marker plus the inline group the caret is inside) are kept so they stay
+    /// directly editable.
     /// </summary>
     private static (string Rendered, List<LayoutSegment> Segments, List<(int Start, int Length, MarkdownInline Inline)> Runs) ComposeRuns(
-        MarkdownBlock block)
+        MarkdownBlock block,
+        bool revealSyntax,
+        int caretPosition)
     {
         var builder = new System.Text.StringBuilder();
         var segments = new List<LayoutSegment>();
         var runs = new List<(int, int, MarkdownInline)>();
 
-        foreach (MarkdownInline inline in block.Inlines)
+        IReadOnlyList<MarkdownInline> inlines = block.Inlines;
+        for (int i = 0; i < inlines.Count; i++)
         {
-            if (inline.IsSyntax)
+            MarkdownInline inline = inlines[i];
+            if (inline.Length == 0)
             {
                 continue;
             }
 
-            if (inline.Length == 0)
+            if (inline.IsSyntax && !ShouldRenderSyntax(block, inlines, i, revealSyntax, caretPosition))
             {
                 continue;
             }
@@ -514,6 +636,80 @@ internal sealed class MarkdownLayoutEngine : IDisposable
         }
 
         return (builder.ToString(), segments, runs);
+    }
+
+    /// <summary>
+    /// Decides whether one syntax span is drawn on the active block. The leading marker of a heading
+    /// or quote shows for the whole line's caret; a list marker never shows because the bullet,
+    /// ordinal or checkbox in the gutter stands in for it; every other span belongs to an inline
+    /// group (a delimiter pair plus everything it wraps) and shows only while the caret is inside
+    /// that group.
+    /// </summary>
+    private static bool ShouldRenderSyntax(
+        MarkdownBlock block,
+        IReadOnlyList<MarkdownInline> inlines,
+        int index,
+        bool revealSyntax,
+        int caretPosition)
+    {
+        if (!revealSyntax)
+        {
+            return false;
+        }
+
+        if (IsBlockMarker(block, inlines[index]))
+        {
+            return block.Kind is MarkdownBlockKind.Heading or MarkdownBlockKind.Quote;
+        }
+
+        return IsCaretWithinInlineGroup(inlines, index, caretPosition);
+    }
+
+    /// <summary>
+    /// The leading syntax span of a block marker: the heading or quote prefix, or the list marker
+    /// that the gutter glyph replaces.
+    /// </summary>
+    private static bool IsBlockMarker(MarkdownBlock block, MarkdownInline inline)
+        => inline.Start == block.Start
+            && block.Kind is MarkdownBlockKind.Heading
+                or MarkdownBlockKind.Quote
+                or MarkdownBlockKind.BulletItem
+                or MarkdownBlockKind.OrderedItem
+                or MarkdownBlockKind.TaskItem;
+
+    /// <summary>
+    /// True when <paramref name="caretPosition"/> lies within the group that
+    /// <paramref name="index"/>'s syntax span delimits, so the caret inside "…**bo|ld**…" reveals
+    /// that pair while the rest of the line stays formatted.
+    /// </summary>
+    private static bool IsCaretWithinInlineGroup(IReadOnlyList<MarkdownInline> inlines, int index, int caretPosition)
+    {
+        (int start, int end) = GetInlineGroupRange(inlines, index);
+        return caretPosition >= start && caretPosition <= end;
+    }
+
+    /// <summary>
+    /// The source range a syntax span belongs to: the maximal run of adjacent spans carrying the
+    /// span's style, which is the delimiter pair plus its content, nested groups included. Two
+    /// groups marked with different styles stay separate even when they touch.
+    /// </summary>
+    private static (int Start, int End) GetInlineGroupRange(IReadOnlyList<MarkdownInline> inlines, int index)
+    {
+        InlineStyle style = inlines[index].Style;
+
+        int first = index;
+        while (first > 0 && (inlines[first - 1].Style & style) == style)
+        {
+            first--;
+        }
+
+        int last = index;
+        while (last + 1 < inlines.Count && (inlines[last + 1].Style & style) == style)
+        {
+            last++;
+        }
+
+        return (inlines[first].Start, inlines[last].End);
     }
 
     private CanvasTextFormat CreateFormat(MarkdownBlock block) => new()
@@ -542,6 +738,14 @@ internal sealed class MarkdownLayoutEngine : IDisposable
             }
 
             InlineStyle style = inline.Style;
+
+            if (inline.IsSyntax)
+            {
+                // Revealed punctuation is muted and carries none of the style it spells out: bold
+                // markers that are themselves bold read as formatted text, not as source.
+                textLayout.SetColor(start, length, theme.SyntaxForeground);
+                continue;
+            }
 
             if (style.HasFlag(InlineStyle.Code))
             {

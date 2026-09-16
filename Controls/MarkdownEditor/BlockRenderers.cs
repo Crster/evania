@@ -91,7 +91,16 @@ internal static class BlockRenderers
         return marker is not null;
     }
 
-    public static BlockLayout BuildCodeBlock(ICanvasResourceCreator resourceCreator, EditorTheme theme, MarkdownBlock block, float availableWidth)
+    /// <param name="revealSyntax">
+    /// True for the block holding the caret: the fences and language tag join the body as ordinary
+    /// editable source, so the markers can be read, selected or deleted in place.
+    /// </param>
+    public static BlockLayout BuildCodeBlock(
+        ICanvasResourceCreator resourceCreator,
+        EditorTheme theme,
+        MarkdownBlock block,
+        float availableWidth,
+        bool revealSyntax)
     {
         float contentWidth = Math.Max(40f, availableWidth - (CodePadding * 2));
         string source = block.Inlines.Count > 0 ? block.Inlines[0].Text : string.Empty;
@@ -104,16 +113,21 @@ internal static class BlockRenderers
             LineSpacingMode = CanvasLineSpacingMode.Default,
         };
 
-        // When there is real content between the fences, neither fence line is drawn; the caret
-        // snaps from the hidden opening fence onto the first content line. An empty block keeps both
-        // fences visible, otherwise there would be nothing left to click or edit.
+        // When there is real content between the fences and the block is not active, neither fence
+        // line is drawn; the caret snaps from the hidden opening fence onto the first content line.
+        // An empty block keeps both fences visible, otherwise there would be nothing left to click
+        // or edit.
         int firstBreak = source.IndexOf('\n');
         bool hasContent = firstBreak >= 0 && firstBreak + 1 < source.Length && source[..firstBreak].TrimStart().StartsWith("```");
 
         string rendered = source;
         var segments = new List<LayoutSegment>();
 
-        if (hasContent)
+        if (revealSyntax || !hasContent)
+        {
+            segments.Add(new LayoutSegment(0, block.Start, rendered.Length, isSynthetic: false));
+        }
+        else
         {
             rendered = rendered[(firstBreak + 1)..];
             segments.Add(new LayoutSegment(0, block.Start + firstBreak + 1, rendered.Length, isSynthetic: false));
@@ -127,10 +141,6 @@ internal static class BlockRenderers
                 segments[^1] = new LayoutSegment(last.RenderStart, last.DocumentStart, tailLength, isSynthetic: false);
             }
         }
-        else
-        {
-            segments.Add(new LayoutSegment(0, block.Start, rendered.Length, isSynthetic: false));
-        }
 
         var textLayout = new CanvasTextLayout(resourceCreator, rendered, format, contentWidth, 0f);
         textLayout.SetColor(0, rendered.Length, theme.Foreground);
@@ -140,6 +150,7 @@ internal static class BlockRenderers
             Block = block,
             ContentX = CodePadding,
             ContentWidth = contentWidth,
+            ShowsSyntax = revealSyntax,
             Text = new TextRegion(textLayout, rendered, new Vector2(CodePadding, CodePadding), segments, block.Start, block.End),
             Height = MarkdownLayoutEngine.MeasureHeight(textLayout, format) + (CodePadding * 2),
         };

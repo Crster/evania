@@ -410,7 +410,9 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         }
 
         float available = Math.Max(80f, contentWidth - 8f);
-        bool rebuilt = engine.Update(canvas, document, available, editModeTableStart);
+        // A read-only editor never shows a caret, so there is no line whose syntax to reveal.
+        int activePosition = IsReadOnly ? -1 : selection.End;
+        bool rebuilt = engine.Update(canvas, document, available, editModeTableStart, activePosition);
 
         // A rebuild produces brand-new BlockLayout objects with no bitmap attached, so the cache is
         // pushed in first, then any target it still lacks is kicked off. Both are cheap no-ops until

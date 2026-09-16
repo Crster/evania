@@ -649,7 +649,7 @@ public static class MarkdownParser
                 continue;
             }
             else if (TryReadDelimited(text, i, "**", out int inner2Start, out int inner2End, out int end2)
-                || TryReadDelimited(text, i, "__", out inner2Start, out inner2End, out end2))
+                || TryReadDelimited(text, i, "__", out inner2Start, out inner2End, out end2, requireWordSeparators: true))
             {
                 FlushPlain(i);
                 AddDelimited(result, offset, text, i, inner2Start, inner2End, end2, InlineStyle.Bold);
@@ -674,7 +674,7 @@ public static class MarkdownParser
                 continue;
             }
             else if (TryReadDelimited(text, i, "*", out int inner4Start, out int inner4End, out int end4)
-                || TryReadDelimited(text, i, "_", out inner4Start, out inner4End, out end4))
+                || TryReadDelimited(text, i, "_", out inner4Start, out inner4End, out end4, requireWordSeparators: true))
             {
                 FlushPlain(i);
                 AddDelimited(result, offset, text, i, inner4Start, inner4End, end4, InlineStyle.Italic);
@@ -718,7 +718,23 @@ public static class MarkdownParser
         }
     }
 
-    private static bool TryReadDelimited(string text, int index, string delimiter, out int innerStart, out int innerEnd, out int end)
+    /// <summary>
+    /// Matches <paramref name="delimiter"/> at <paramref name="index"/> and reports the inner span
+    /// and the exclusive end of the whole construct.
+    /// </summary>
+    /// <remarks>
+    /// With <paramref name="requireWordSeparators"/> (underscore markers), the delimiter only counts
+    /// when a word separator - or the text's edge - sits before the opening pair and after the
+    /// closing one, so "part1_part2_part3" keeps its underscores instead of styling "part2".
+    /// </remarks>
+    private static bool TryReadDelimited(
+        string text,
+        int index,
+        string delimiter,
+        out int innerStart,
+        out int innerEnd,
+        out int end,
+        bool requireWordSeparators = false)
     {
         innerStart = 0;
         innerEnd = 0;
@@ -746,8 +762,18 @@ public static class MarkdownParser
 
         innerEnd = close;
         end = close + delimiter.Length;
+
+        if (requireWordSeparators
+            && (index > 0 && IsWordCharacter(text[index - 1])
+                || end < text.Length && IsWordCharacter(text[end])))
+        {
+            return false;
+        }
+
         return true;
     }
+
+    private static bool IsWordCharacter(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static bool TryReadLink(
         string text,

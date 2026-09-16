@@ -18,9 +18,6 @@ namespace Evania.ViewModels
     /// <summary>One entry in the shortcut dropdown.</summary>
     public sealed record HotkeyOption(ScreenshotHotkey Value, string Display);
 
-    /// <summary>One entry in the chat provider dropdown.</summary>
-    public sealed record ChatProviderOption(ChatProvider Value, string Display);
-
     /// <summary>
     /// Backs the Settings page.
     ///
@@ -43,14 +40,6 @@ namespace Evania.ViewModels
             new HotkeyOption(ScreenshotHotkey.AltPrintScreen, ScreenshotHotkey.AltPrintScreen.ToDisplayString()),
             new HotkeyOption(ScreenshotHotkey.CtrlShift3, ScreenshotHotkey.CtrlShift3.ToDisplayString()),
             new HotkeyOption(ScreenshotHotkey.AltP, ScreenshotHotkey.AltP.ToDisplayString()),
-        ];
-
-        public IReadOnlyList<ChatProviderOption> ChatProviderOptions { get; } =
-        [
-            new ChatProviderOption(ChatProvider.Copilot, ChatProvider.Copilot.ToDisplayString()),
-            new ChatProviderOption(ChatProvider.Gemini, ChatProvider.Gemini.ToDisplayString()),
-            new ChatProviderOption(ChatProvider.ChatGPT, ChatProvider.ChatGPT.ToDisplayString()),
-            new ChatProviderOption(ChatProvider.Claude, ChatProvider.Claude.ToDisplayString()),
         ];
 
         private static readonly HttpClient BookmarkTitleHttpClient = new()
@@ -158,13 +147,6 @@ namespace Evania.ViewModels
             }
         } = null!;
 
-        /// <summary>The chat provider dropdown selection, as the option record the ComboBox holds.</summary>
-        public ChatProviderOption SelectedChatProviderOption
-        {
-            get => field ?? ChatProviderOptions[0];
-            set => SetProperty(ref field, value);
-        } = null!;
-
         private bool stagingHotkey;
 
         // Applying a different database reloads the bookmarks from it on a background thread, so
@@ -231,7 +213,6 @@ namespace Evania.ViewModels
             SelectedHotkeyOption = HotkeyOptions.FirstOrDefault(o => o.Value == Settings.ScreenshotShortcut) ?? HotkeyOptions[0];
             stagingHotkey = false;
 
-            SelectedChatProviderOption = ChatProviderOptions.FirstOrDefault(o => o.Value == Settings.ChatProvider) ?? ChatProviderOptions[0];
             UpdateEncryptionNotice();
             SyncBookmarksFromSettings();
             NewBookmarkUrl = string.Empty;
@@ -606,10 +587,59 @@ namespace Evania.ViewModels
         public void SetAutoSave(bool enabled) => Settings.AutoSaveScreenshot = enabled;
 
         /// <summary>
-        /// The Chat page listens to this setting itself, so a switch here moves a loaded chat
-        /// straight to the new provider.
+        /// Validates and applies the address typed in Settings. A value without a scheme is read
+        /// as https, an empty box restores the default Copilot address, and anything that is not
+        /// a usable http(s) URL is reported through <see cref="ErrorMessage"/> without touching
+        /// the live setting. The Chat page listens to the setting itself, so an accepted address
+        /// moves a loaded chat straight to it.
         /// </summary>
-        public void SetChatProvider(ChatProvider provider) => Settings.ChatProvider = provider;
+        public bool SetChatProviderUrl(string? url)
+        {
+            string trimmed = (url ?? string.Empty).Trim();
+
+            if (trimmed.Length == 0)
+            {
+                ErrorMessage = string.Empty;
+                Settings.ChatProviderUrl = ChatProviderDefaults.Url;
+                return true;
+            }
+
+            if (!trimmed.Contains("://"))
+            {
+                trimmed = "https://" + trimmed;
+            }
+
+            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? parsed)
+                || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+            {
+                ErrorMessage = "Enter a valid http or https address, or leave the box empty to use Copilot.";
+                return false;
+            }
+
+            ErrorMessage = string.Empty;
+            Settings.ChatProviderUrl = trimmed;
+            return true;
+        }
+
+        /// <summary>
+        /// Whether the text in the box differs from the live setting once normalized the same way
+        /// <see cref="SetChatProviderUrl"/> would, so the Set button lights up only for real edits.
+        /// </summary>
+        public bool IsChatProviderUrlStaged(string? url)
+        {
+            string trimmed = (url ?? string.Empty).Trim();
+
+            if (trimmed.Length == 0)
+            {
+                trimmed = ChatProviderDefaults.Url;
+            }
+            else if (!trimmed.Contains("://"))
+            {
+                trimmed = "https://" + trimmed;
+            }
+
+            return !string.Equals(trimmed, Settings.ChatProviderUrl, StringComparison.OrdinalIgnoreCase);
+        }
 
         public async Task<bool> AddBookmarkAsync()
         {

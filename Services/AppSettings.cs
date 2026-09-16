@@ -27,34 +27,10 @@ public static class ScreenshotHotkeyExtensions
     };
 }
 
-/// <summary>Which AI chat service the Chat page shows.</summary>
-public enum ChatProvider
+/// <summary>The address the Chat page shows when the user has not typed one.</summary>
+public static class ChatProviderDefaults
 {
-    Copilot,
-    Gemini,
-    ChatGPT,
-    Claude,
-}
-
-public static class ChatProviderExtensions
-{
-    public static string ToDisplayString(this ChatProvider provider) => provider switch
-    {
-        ChatProvider.Copilot => "Copilot",
-        ChatProvider.Gemini => "Gemini",
-        ChatProvider.ChatGPT => "ChatGPT",
-        ChatProvider.Claude => "Claude",
-        _ => "Copilot",
-    };
-
-    public static string ToUrl(this ChatProvider provider) => provider switch
-    {
-        ChatProvider.Copilot => "https://copilot.microsoft.com",
-        ChatProvider.Gemini => "https://gemini.google.com/app",
-        ChatProvider.ChatGPT => "https://chatgpt.com",
-        ChatProvider.Claude => "https://claude.ai",
-        _ => "https://copilot.microsoft.com",
-    };
+    public const string Url = "https://copilot.microsoft.com";
 }
 
 /// <summary>
@@ -99,11 +75,12 @@ public partial class AppSettings : ObservableObject
     public partial bool AutoSaveScreenshot { get; set; }
 
     /// <summary>
-    /// The AI chat service the Chat page hosts. The page subscribes to this property so switching
-    /// providers in Settings navigates a loaded Chat page immediately.
+    /// The address the Chat page hosts, typed freely in Settings. An unreadable value falls back
+    /// to <see cref="ChatProviderDefaults.Url"/> when the page resolves it. The page subscribes to
+    /// this property so editing it in Settings navigates a loaded Chat page immediately.
     /// </summary>
     [ObservableProperty]
-    public partial ChatProvider ChatProvider { get; set; } = ChatProvider.Copilot;
+    public partial string ChatProviderUrl { get; set; } = ChatProviderDefaults.Url;
 
     /// <summary>
     /// The notes list sort the user last chose; the Notes page restores it on load.

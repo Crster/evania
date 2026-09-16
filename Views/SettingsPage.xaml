@@ -319,23 +319,29 @@
             <Border Style="{StaticResource SectionCard}">
                 <StackPanel Spacing="0">
 
-                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto">
-                        <StackPanel VerticalAlignment="Center">
+                    <Grid Style="{StaticResource SettingRow}">
+                        <StackPanel>
                             <TextBlock x:Name="ProviderTitle" Text="Provider" Style="{StaticResource SettingTitle}" />
                             <TextBlock
                                 x:Name="ProviderSubtitle"
-                                Text="Which AI chat service the Chat page opens. Your sign-in is kept for every provider, so switching back later finds you still logged in."
+                                Text="The web address the Chat page opens. Leave it empty to use Microsoft Copilot. Your sign-in is kept for the sites you visit here."
                                 Style="{StaticResource SettingSubtitle}" />
+                            <Grid Margin="0,10,0,0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <TextBox
+                                    x:Name="ChatProviderBox"
+                                    Height="36"
+                                    VerticalAlignment="Center"
+                                    PlaceholderText="https://copilot.microsoft.com"
+                                    TextChanged="ChatProviderBox_TextChanged" />
+                                <Button
+                                    x:Name="ChatProviderSetButton"
+                                    Grid.Column="1"
+                                    Content="Set"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource ActionButton}"
+                                    Click="ChatProviderSet_Click" />
+                            </Grid>
                         </StackPanel>
-                        <ComboBox
-                            x:Name="ChatProviderCombo"
-                            Grid.Column="1"
-                            VerticalAlignment="Center"
-                            MinWidth="200"
-                            Height="36"
-                            ItemsSource="{x:Bind ViewModel.ChatProviderOptions}"
-                            DisplayMemberPath="Display"
-                            SelectionChanged="ChatProvider_SelectionChanged" />
                     </Grid>
                 </StackPanel>
             </Border>

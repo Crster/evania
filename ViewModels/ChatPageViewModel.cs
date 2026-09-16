@@ -14,7 +14,20 @@ namespace Evania.ViewModels
         /// <summary>The live settings instance the page reads the provider from.</summary>
         public AppSettings Settings { get; } = SettingsService.Current;
 
-        /// <summary>The address of the currently chosen provider.</summary>
-        public Uri ChatUrl => new(Settings.ChatProvider.ToUrl());
+        /// <summary>The address of the currently chosen provider, falling back to Copilot when the
+        /// value typed in Settings is not a usable absolute URL.</summary>
+        public Uri ChatUrl
+        {
+            get
+            {
+                if (Uri.TryCreate(Settings.ChatProviderUrl, UriKind.Absolute, out Uri? url)
+                    && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps))
+                {
+                    return url;
+                }
+
+                return new Uri(ChatProviderDefaults.Url);
+            }
+        }
     }
 }

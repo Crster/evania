@@ -166,7 +166,8 @@ public sealed partial class SettingsPage : Page
         // item-resolution pass (the selection comes back empty), while a record that is one of the
         // ItemsSource items is matched by reference.
         ShortcutCombo.SelectedItem = ViewModel.SelectedHotkeyOption;
-        ChatProviderCombo.SelectedItem = ViewModel.SelectedChatProviderOption;
+        ChatProviderBox.Text = ViewModel.Settings.ChatProviderUrl;
+        ChatProviderSetButton.IsEnabled = ViewModel.IsChatProviderUrlStaged(ChatProviderBox.Text);
     }
 
     private async void Browse_Click(object sender, RoutedEventArgs e)
@@ -254,14 +255,27 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void ChatProvider_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    /// <summary>
+    /// The address is committed only by the Set button: a half-typed address must not steer the
+    /// Chat page, so the text is validated here before it reaches the settings and, on success,
+    /// the normalized value is shown back in the box.
+    /// </summary>
+    private void ChatProviderSet_Click(object sender, RoutedEventArgs e)
     {
-        if (!loaded || ChatProviderCombo.SelectedItem is not ChatProviderOption option)
+        if (!loaded)
         {
             return;
         }
 
-        ViewModel.SetChatProvider(option.Value);
+        if (ViewModel.SetChatProviderUrl(ChatProviderBox.Text))
+        {
+            ChatProviderBox.Text = ViewModel.Settings.ChatProviderUrl;
+        }
+    }
+
+    private void ChatProviderBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        ChatProviderSetButton.IsEnabled = ViewModel.IsChatProviderUrlStaged(ChatProviderBox.Text);
     }
 
     private async void AddBookmark_Click(object sender, RoutedEventArgs e)

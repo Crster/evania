@@ -25,7 +25,7 @@ public sealed partial class ChatPage : Page
     private bool initializing;
     private bool coreEventsAttached;
     private bool canGoBack;
-    private ChatProvider? lastSyncedProvider;
+    private string? lastSyncedProviderUrl;
 
     public event EventHandler? BrowserNavigationStateChanged;
 
@@ -79,12 +79,12 @@ public sealed partial class ChatPage : Page
     }
 
     /// <summary>
-    /// A provider switch made in Settings moves a loaded Chat page at once - the setting applies
-    /// as it is flipped, like every other switch in the app.
+    /// A provider address edited in Settings moves a loaded Chat page at once - the setting applies
+    /// as it is typed, like every other switch in the app.
     /// </summary>
     private void Settings_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(AppSettings.ChatProvider) && ChatBrowser.CoreWebView2 is not null)
+        if (e.PropertyName == nameof(AppSettings.ChatProviderUrl) && ChatBrowser.CoreWebView2 is not null)
         {
             SyncChatSourceIfProviderChanged();
         }
@@ -92,15 +92,15 @@ public sealed partial class ChatPage : Page
 
     private void SyncChatSourceIfProviderChanged()
     {
-        ChatProvider provider = SettingsService.Current.ChatProvider;
+        string url = ViewModel.ChatUrl.ToString();
 
-        if (lastSyncedProvider == provider)
+        if (lastSyncedProviderUrl == url)
         {
             return;
         }
 
         ChatBrowser.Source = ViewModel.ChatUrl;
-        lastSyncedProvider = provider;
+        lastSyncedProviderUrl = url;
     }
 
     public bool TryGoBackInBrowser()

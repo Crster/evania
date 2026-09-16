@@ -124,7 +124,7 @@ public static partial class SettingsService
             CloseToTray = settings.CloseToTray,
             ScreenshotShortcut = settings.ScreenshotShortcut,
             AutoSaveScreenshot = settings.AutoSaveScreenshot,
-            ChatProvider = settings.ChatProvider,
+            ChatProviderUrl = settings.ChatProviderUrl,
             NoteSort = settings.NoteSort,
 
             // Bookmarks are content, not configuration, so BookmarkService keeps them in the
@@ -190,7 +190,9 @@ public static partial class SettingsService
         settings.CloseToTray = dto.CloseToTray;
         settings.ScreenshotShortcut = dto.ScreenshotShortcut;
         settings.AutoSaveScreenshot = dto.AutoSaveScreenshot;
-        settings.ChatProvider = dto.ChatProvider;
+        settings.ChatProviderUrl = string.IsNullOrWhiteSpace(dto.ChatProviderUrl)
+            ? ChatProviderDefaults.Url
+            : dto.ChatProviderUrl;
         settings.NoteSort = dto.NoteSort;
         // Legacy only. A file written before bookmarks moved into the database still carries them,
         // and BookmarkService hands that list to the data file the first time one opens.
@@ -218,7 +220,7 @@ public static partial class SettingsService
 
         public bool AutoSaveScreenshot { get; set; }
 
-        public ChatProvider ChatProvider { get; set; }
+        public string? ChatProviderUrl { get; set; }
 
         public NoteSortOrder NoteSort { get; set; }
 

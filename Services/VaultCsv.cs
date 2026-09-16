@@ -13,8 +13,8 @@ public sealed record VaultCsvRow(string Site, VaultAccount Account);
 /// CSV portability for the vault. Import auto-detects the browser export format by its header row -
 /// Chrome/Edge (<c>name,url,username,password</c>) and Firefox (<c>url,username,password,...</c>)
 /// both carry the fields Evania needs. Export writes the Chrome-compatible form, which most other
-/// managers accept too. Vault-only fields (email, OTP, secret, note) have no browser equivalent on
-/// import or export, so a round trip carries the credentials only.
+/// managers accept too. Vault-only fields (otp and note) have no browser equivalent on import or
+/// export, so a round trip carries the credentials only.
 /// </summary>
 public static class VaultCsv
 {

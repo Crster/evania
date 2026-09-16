@@ -6,7 +6,6 @@ using Evania.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -23,9 +22,14 @@ public sealed partial class VaultPage : Page
     /// </summary>
     private DispatcherTimer? totpTimer;
 
-    /// <summary>Starts masked, and re-masked every time the editor opens so a previous session's
-    /// reveal choice never leaks into a different account.</summary>
-    private bool passwordMasked = true;
+    /// <summary>
+    /// The password field starts masked and is re-masked every time the editor opens, so a previous
+    /// session's reveal choice never leaks into a different account.
+    /// </summary>
+    private bool passwordVisible;
+
+    /// <summary>The otpauth:// URI behind the shareable QR, or null when the edited secret is invalid.</summary>
+    private string? otpAuthUri;
 
     public VaultPageViewModel ViewModel { get; } = new();
 
@@ -38,6 +42,9 @@ public sealed partial class VaultPage : Page
 
         DataContext = ViewModel;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+
+        EditorTabs.SelectionChanged += EditorTabs_SelectionChanged;
+        EditorTabs.SelectedItem = EditorTabs.Items[0];
     }
 
     private async void VaultPage_Loaded(object sender, RoutedEventArgs e)
@@ -84,19 +91,43 @@ public sealed partial class VaultPage : Page
     {
         if (e.PropertyName == nameof(VaultPageViewModel.IsEditing))
         {
-            // New and Open both raise IsEditing just after filling the edit fields, so the mask
-            // reset always reflects the account being shown, never the previous one.
+            // New and Open both raise IsEditing just after filling the edit fields, so the resets
+            // here always reflect the account being shown, never the previous one.
             if (ViewModel.IsEditing)
             {
-                passwordMasked = true;
+                passwordVisible = false;
                 ApplyPasswordMask();
+                NoteEditor.Markdown = ViewModel.EditNote;
+                EditorTabs.SelectedItem = EditorTabs.Items[0];
+
+                UpdateOtpQr();
             }
 
             UpdatePanels();
         }
-        else if (e.PropertyName == nameof(VaultPageViewModel.EditPassword) && passwordMasked)
+        else if (e.PropertyName is nameof(VaultPageViewModel.EditTotpSecret) or
+                 nameof(VaultPageViewModel.EditSite) or
+                 nameof(VaultPageViewModel.EditUsername))
         {
-            PasswordInputMasked.Text = Mask(ViewModel.EditPassword);
+            // The QR embeds the issuer and account name alongside the secret, so it follows edits
+            // to any of the three.
+            UpdateOtpQr();
+        }
+        else if (e.PropertyName == nameof(VaultPageViewModel.EditPassword))
+        {
+            if (!passwordVisible && PasswordInput.Visibility == Visibility.Visible
+                && !string.IsNullOrEmpty(ViewModel.EditPassword))
+            {
+                // The empty field renders as plain text so the first character can be typed;
+                // once there is a value on screen the eye must switch to the "Hide" state to
+                // match what is actually shown.
+                passwordVisible = true;
+                ApplyPasswordMask();
+            }
+            else if (!passwordVisible)
+            {
+                PasswordInputMasked.Text = Mask(ViewModel.EditPassword);
+            }
         }
         else if (e.PropertyName == nameof(VaultPageViewModel.Groups))
         {
@@ -255,30 +286,27 @@ public sealed partial class VaultPage : Page
     private void EditorCopyPassword_Click(object sender, RoutedEventArgs e) =>
         CopyToClipboard(ViewModel.EditPassword);
 
-    private void EditorCopySecret_Click(object sender, RoutedEventArgs e) =>
-        CopyToClipboard(ViewModel.EditSecret);
-
     private void TogglePassword_Click(object sender, RoutedEventArgs e)
     {
-        passwordMasked = !passwordMasked;
+        passwordVisible = !passwordVisible;
         ApplyPasswordMask();
     }
 
     /// <summary>
-    /// Swaps the multiline password input for its read-only bullet stand-in and flips the eye icon.
-    /// The real TextBox is never rewritten, so masking cannot corrupt the bound value.
-    /// When the password is empty the mask is skipped so the user can type immediately.
+    /// Swaps the single-line password input for its read-only bullet stand-in and flips the eye
+    /// icon. The real TextBox is never rewritten, so masking cannot corrupt the bound value. When
+    /// the password is empty the mask is skipped so the user can type immediately.
     /// </summary>
     private void ApplyPasswordMask()
     {
-        bool showMasked = passwordMasked && !string.IsNullOrEmpty(ViewModel.EditPassword);
+        bool showMasked = !passwordVisible && !string.IsNullOrEmpty(ViewModel.EditPassword);
 
         PasswordInput.Visibility = showMasked ? Visibility.Collapsed : Visibility.Visible;
         PasswordInputMasked.Visibility = showMasked ? Visibility.Visible : Visibility.Collapsed;
         PasswordInputMasked.Text = showMasked ? Mask(ViewModel.EditPassword) : string.Empty;
 
-        TogglePasswordIcon.Glyph = passwordMasked ? "\uE7B3" : "\uED1A";
-        ToolTipService.SetToolTip(TogglePasswordButton, passwordMasked ? "Show password" : "Hide password");
+        TogglePasswordIcon.Glyph = passwordVisible ? "\uED1A" : "\uE7B3";
+        ToolTipService.SetToolTip(TogglePasswordButton, passwordVisible ? "Hide password" : "Show password");
 
         if (!showMasked)
         {
@@ -288,8 +316,90 @@ public sealed partial class VaultPage : Page
 
     private static string Mask(string value) => new('●', value.Length);
 
+    private void NoteEditor_MarkdownChanged(object? sender, string markdown) =>
+        ViewModel.EditNote = markdown;
+
+    // Basic note formatting, mirroring the subset of the NotePage toolbar that fits here.
+    private void NoteBold_Click(object sender, RoutedEventArgs e) => NoteEditor.ToggleBold();
+    private void NoteItalic_Click(object sender, RoutedEventArgs e) => NoteEditor.ToggleItalic();
+    private void NoteStrikethrough_Click(object sender, RoutedEventArgs e) => NoteEditor.ToggleStrikethrough();
+    private void NoteCode_Click(object sender, RoutedEventArgs e) => NoteEditor.ToggleInlineCode();
+    private void NoteList_Click(object sender, RoutedEventArgs e) => NoteEditor.ToggleBulletList();
+    private void NoteOrderedList_Click(object sender, RoutedEventArgs e) => NoteEditor.ToggleOrderedList();
+    private void NoteTaskList_Click(object sender, RoutedEventArgs e) => NoteEditor.ToggleTaskList();
+    private void NoteQuote_Click(object sender, RoutedEventArgs e) => NoteEditor.ToggleQuote();
+
     private void EditorCopyTotp_Click(object sender, RoutedEventArgs e) =>
         CopyToClipboard(ViewModel.EditTotpCode);
+
+    private void CopyOtpUri_Click(object sender, RoutedEventArgs e)
+    {
+        if (otpAuthUri is not null)
+        {
+            CopyToClipboard(otpAuthUri);
+        }
+    }
+
+    /// <summary>
+    /// Renders the shareable QR for the secret currently being edited, or clears it when the secret
+    /// is absent or invalid. The QR's own visibility is the view model's - it shows exactly when a
+    /// live code does.
+    /// </summary>
+    private void UpdateOtpQr()
+    {
+        if (TotpService.TryParseSecret(
+                ViewModel.EditTotpSecret,
+                out string secret,
+                out int digits,
+                out int period))
+        {
+            otpAuthUri = TotpService.BuildOtpAuthUri(secret, ViewModel.EditSite, ViewModel.EditUsername, digits, period);
+
+            try
+            {
+                // 2x the display size so high-DPI screens get a crisp 1:1 render.
+                OtpQrImage.Source = QrService.Render(otpAuthUri, 440);
+                return;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        otpAuthUri = null;
+        OtpQrImage.Source = null;
+    }
+
+    // --- history tab -------------------------------------------------------------------------------
+
+    private void HistoryReveal_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not VaultHistoryItem item)
+        {
+            return;
+        }
+
+        item.IsPasswordVisible = !item.IsPasswordVisible;
+        ToolTipService.SetToolTip(
+            (FrameworkElement)sender,
+            item.IsPasswordVisible ? "Hide password" : "Show password");
+    }
+
+    private void HistoryCopyUsername_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is VaultHistoryItem { HasUsername: true } item)
+        {
+            CopyToClipboard(item.Username);
+        }
+    }
+
+    private void HistoryCopyPassword_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is VaultHistoryItem { HasPassword: true } item)
+        {
+            CopyToClipboard(item.Password);
+        }
+    }
 
     private async void ScanTotpQr_Click(object sender, RoutedEventArgs e)
     {
@@ -369,7 +479,6 @@ public sealed partial class VaultPage : Page
                 }
 
                 bool isValidTotp = TotpService.TryParseSecret(text, out _, out _, out _);
-                bool isOtpAuthUri = text.StartsWith("otpauth://", StringComparison.OrdinalIgnoreCase);
 
                 if (isValidTotp)
                 {
@@ -422,7 +531,7 @@ public sealed partial class VaultPage : Page
         }
     }
 
-    // --- card quick actions ------------------------------------------------------------------------
+    // --- card quick actions ----------------------------------------------------------------------
 
     private async void CopyUsername_Click(object sender, RoutedEventArgs e)
     {
@@ -605,6 +714,15 @@ public sealed partial class VaultPage : Page
 
     // --- plumbing ----------------------------------------------------------------------------------
 
+    private void EditorTabs_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        if (NotePanel is null || OtpPanel is null || HistoryPanel is null)
+            return;
+
+        NotePanel.Visibility = sender.SelectedItem == sender.Items[0] ? Visibility.Visible : Visibility.Collapsed;
+        OtpPanel.Visibility = sender.SelectedItem == sender.Items[1] ? Visibility.Visible : Visibility.Collapsed;
+        HistoryPanel.Visibility = sender.SelectedItem == sender.Items[2] ? Visibility.Visible : Visibility.Collapsed;
+    }
     private void ErrorBar_Closed(InfoBar sender, InfoBarClosedEventArgs args) => ViewModel.ClearError();
 
     private void StatusBar_Closed(InfoBar sender, InfoBarClosedEventArgs args) => ViewModel.ClearStatus();

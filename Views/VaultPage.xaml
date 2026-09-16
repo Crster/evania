@@ -6,12 +6,14 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:converters="using:Evania.Converters"
     xmlns:models="using:Evania.Models"
+    xmlns:editor="using:Evania.Controls.MarkdownEditor"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     Loaded="VaultPage_Loaded"
     Unloaded="VaultPage_Unloaded">
 
     <Page.Resources>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
         <!-- Groups are swapped in by the view model whenever the list reloads; the ListView reads
              this source's View, set once in the constructor. -->
         <CollectionViewSource x:Name="GroupedEntriesSource" IsSourceGrouped="True" />
@@ -69,6 +71,15 @@
             <Setter Property="MinWidth" Value="100" />
             <Setter Property="Height" Value="32" />
             <Setter Property="Padding" Value="12,0" />
+        </Style>
+
+        <Style x:Key="HistoryCard" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="Margin" Value="0,0,0,8" />
         </Style>
 
         <!-- Card-style list item, the house style shared with the notes list: the default item
@@ -280,12 +291,6 @@
                                     FontSize="14"
                                     FontWeight="SemiBold"
                                     TextTrimming="CharacterEllipsis" />
-                                    <TextBlock
-                                    Text="{x:Bind SecondaryText}"
-                                    FontSize="11"
-                                    Opacity="0.6"
-                                    TextTrimming="CharacterEllipsis"
-                                    Visibility="{x:Bind HasSecondaryText, Converter={StaticResource BoolToVisibilityConverter}}" />
                                 </StackPanel>
                                 <StackPanel
                                 Grid.Column="2"
@@ -300,15 +305,6 @@
                                     Padding="5,1"
                                     Visibility="{x:Bind HasTotp, Converter={StaticResource BoolToVisibilityConverter}}">
                                         <TextBlock Text="OTP" FontSize="10" Opacity="0.75" />
-                                    </Border>
-                                    <Border
-                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="4"
-                                    Padding="5,1"
-                                    Visibility="{x:Bind HasSecret, Converter={StaticResource BoolToVisibilityConverter}}">
-                                        <TextBlock Text="Secret" FontSize="10" Opacity="0.75" />
                                     </Border>
                                     <Border
                                     Background="{ThemeResource SubtleFillColorSecondaryBrush}"
@@ -422,10 +418,10 @@
                                 </TextBox.Resources>
                             </TextBox>
                             <TextBlock
-                            Text="{x:Bind ViewModel.EditTimestampsText, Mode=OneWay}"
+                            Text="{x:Bind ViewModel.LastChangedText, Mode=OneWay}"
                             FontSize="11"
                             Opacity="0.55"
-                            Visibility="{x:Bind ViewModel.IsExistingEntry, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            Visibility="{x:Bind ViewModel.HasLastChanged, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                         </StackPanel>
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -441,6 +437,7 @@
 
                             <Button
                             Style="{StaticResource ToolbarButtonStyle}"
+                            Height="32"
                             Click="Delete_Click"
                             ToolTipService.ToolTip="Delete account"
                             Visibility="{x:Bind ViewModel.IsExistingEntry, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
@@ -465,12 +462,12 @@
                     <Border Style="{StaticResource SectionCard}">
                         <StackPanel Spacing="0">
 
-                            <!-- Username row -->
+                            <!-- Username / Email row -->
                             <StackPanel>
-                                <TextBlock Text="Username" Style="{StaticResource SettingTitle}" />
-                                <TextBlock Text="The name you sign in with." Style="{StaticResource SettingSubtitle}" />
+                                <TextBlock Text="Username / Email" Style="{StaticResource SettingTitle}" />
+                                <TextBlock Text="The name or address you sign in with." Style="{StaticResource SettingSubtitle}" />
                                 <TextBox
-                                PlaceholderText="e.g. ada"
+                                PlaceholderText="e.g. ada or ada@example.com"
                                 Text="{Binding EditUsername, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                 Height="36"
                                 VerticalContentAlignment="Center"
@@ -479,213 +476,306 @@
 
                             <Line Style="{StaticResource RowDivider}" />
 
-                            <!-- Email row -->
+                            <!-- Password / Secret row -->
                             <StackPanel>
-                                <TextBlock Text="Email" Style="{StaticResource SettingTitle}" />
-                                <TextBlock Text="The email address for this account, when it differs from the username." Style="{StaticResource SettingSubtitle}" />
-                                <TextBox
-                                PlaceholderText="e.g. ada@example.com"
-                                Text="{Binding EditEmail, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                Height="36"
-                                VerticalContentAlignment="Center"
-                                Margin="0,12,0,0" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
+                                <TextBlock Text="Password / Secret" Style="{StaticResource SettingTitle}" />
+                                <TextBlock
+                                Text="The password, private key, or recovery code for this account."
+                                Style="{StaticResource SettingSubtitle}" />
 
-                    <!-- Password Section -->
-                    <TextBlock Text="Password" Style="{StaticResource SectionHeader}" />
-
-                    <Border Style="{StaticResource SectionCard}">
-                        <StackPanel Spacing="0">
-
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Password" Style="{StaticResource SettingTitle}" />
-                                    <TextBlock
-                                    Text="Passwords, private keys, or recovery code blocks."
-                                    Style="{StaticResource SettingSubtitle}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                <Grid Margin="0,12,0,0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4">
+                                    <Grid>
+                                        <TextBox
+                                        x:Name="PasswordInput"
+                                        PlaceholderText="Password or secret"
+                                        Text="{Binding EditPassword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        TextWrapping="NoWrap"
+                                        FontFamily="Cascadia Mono,Consolas"
+                                        FontSize="13"
+                                        Height="36"
+                                        VerticalContentAlignment="Center"
+                                        Visibility="Collapsed" />
+                                        <!-- Read-only stand-in that hides the value with bullets while
+                                             the real input stays masked: a TextBox cannot mask its own
+                                             text in WinUI 3. -->
+                                        <TextBox
+                                        x:Name="PasswordInputMasked"
+                                        IsReadOnly="True"
+                                        IsTabStop="False"
+                                        FontFamily="Cascadia Mono,Consolas"
+                                        FontSize="13"
+                                        Height="36"
+                                        VerticalContentAlignment="Center" />
+                                    </Grid>
                                     <Button
-                                    Style="{StaticResource ToolbarButtonStyle}"
-                                    Click="EditorCopyPassword_Click"
-                                    ToolTipService.ToolTip="Copy password">
-                                        <FontIcon Glyph="&#xE8C8;" FontSize="14" />
-                                    </Button>
-                                    <Button
+                                    Grid.Column="1"
                                     x:Name="TogglePasswordButton"
                                     Style="{StaticResource ToolbarButtonStyle}"
                                     Click="TogglePassword_Click"
-                                    ToolTipService.ToolTip="Show password">
+                                    ToolTipService.ToolTip="Show password"
+                                    VerticalAlignment="Center">
                                         <FontIcon x:Name="TogglePasswordIcon" Glyph="&#xE7B3;" FontSize="14" />
                                     </Button>
                                     <Button
-                                    Style="{StaticResource ToolbarButtonStyle}"
-                                    Click="EditorGenerate_Click"
-                                    ToolTipService.ToolTip="Generate password">
-                                        <FontIcon Glyph="&#xE8B1;" FontSize="14" />
-                                    </Button>
-                                </StackPanel>
-                            </Grid>
-
-                            <Grid Margin="0,12,0,0">
-                                <TextBox
-                                x:Name="PasswordInput"
-                                PlaceholderText="Password, private key, or recovery codes"
-                                Text="{Binding EditPassword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                AcceptsReturn="True"
-                                TextWrapping="Wrap"
-                                MinHeight="84"
-                                FontFamily="Cascadia Mono,Consolas"
-                                FontSize="13"
-                                Visibility="Collapsed" />
-                                <!-- Read-only stand-in that hides the value with bullets while the
-                                     real input stays masked: a PasswordBox cannot be multi-line. -->
-                                <TextBox
-                                x:Name="PasswordInputMasked"
-                                IsReadOnly="True"
-                                IsTabStop="False"
-                                TextWrapping="Wrap"
-                                MinHeight="84"
-                                FontFamily="Cascadia Mono,Consolas"
-                                FontSize="13" />
-                            </Grid>
-
-                            <!-- Strength meter -->
-                            <StackPanel
-                            Margin="0,10,0,0"
-                            Spacing="6"
-                            Visibility="{x:Bind ViewModel.HasEditPassword, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                                <ProgressBar Maximum="1" Value="{x:Bind ViewModel.EditPasswordStrength, Mode=OneWay}" Height="4" />
-                                <TextBlock Text="{x:Bind ViewModel.EditPasswordStrengthText, Mode=OneWay}" FontSize="11" Opacity="0.6" />
-                            </StackPanel>
-
-                            <TextBlock
-                            Text="Multi-line on purpose — long keys and recovery code blocks paste as-is."
-                            FontSize="11"
-                            Opacity="0.5"
-                            Margin="0,6,0,0" />
-                        </StackPanel>
-                    </Border>
-
-                    <!-- OTP (Two-Factor) Section -->
-                    <TextBlock Text="OTP (Two-Factor)" Style="{StaticResource SectionHeader}" />
-
-                    <Border Style="{StaticResource SectionCard}">
-                        <StackPanel Spacing="0">
-                            <StackPanel>
-                                <TextBlock Text="OTP Secret" Style="{StaticResource SettingTitle}" />
-                                <TextBlock
-                                Text="Base32 secret key, or an otpauth:// link. Generates standard 30-second one-time codes."
-                                Style="{StaticResource SettingSubtitle}" />
-
-                                <Grid Margin="0,12,0,0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <PasswordBox
-                                    PlaceholderText="Base32 secret or otpauth:// uri"
-                                    Password="{Binding EditTotpSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                    PasswordRevealMode="Peek"
-                                    FontFamily="Cascadia Mono,Consolas"
-                                    FontSize="13"
-                                    Height="36"
-                                    VerticalContentAlignment="Center" />
-                                    <Button
-                                    Grid.Column="1"
-                                    Style="{StaticResource ActionButton}"
-                                    Click="ScanTotpQr_Click"
-                                    ToolTipService.ToolTip="Scan authenticator QR code with webcam">
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <FontIcon Glyph="&#xE721;" FontSize="14" />
-                                            <TextBlock Text="Scan QR" />
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-
-                                <!-- Live code display -->
-                                <Grid
-                                Margin="0,14,0,0"
-                                ColumnDefinitions="Auto,Auto,*"
-                                ColumnSpacing="12"
-                                VerticalAlignment="Center"
-                                Visibility="{x:Bind ViewModel.HasEditTotpCode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                                    <TextBlock
-                                    Text="{x:Bind ViewModel.EditTotpCode, Mode=OneWay}"
-                                    FontFamily="Cascadia Mono,Consolas"
-                                    FontSize="24"
-                                    FontWeight="SemiBold"
-                                    VerticalAlignment="Center" />
-                                    <ProgressBar
-                                    Grid.Column="1"
-                                    Width="56"
-                                    Height="4"
-                                    Maximum="1"
-                                    Value="{x:Bind ViewModel.EditTotpProgress, Mode=OneWay}"
-                                    VerticalAlignment="Center" />
-                                    <Button
                                     Grid.Column="2"
                                     Style="{StaticResource ToolbarButtonStyle}"
-                                    Click="EditorCopyTotp_Click"
-                                    ToolTipService.ToolTip="Copy code"
+                                    Click="EditorCopyPassword_Click"
+                                    ToolTipService.ToolTip="Copy password"
                                     VerticalAlignment="Center">
                                         <FontIcon Glyph="&#xE8C8;" FontSize="14" />
                                     </Button>
+                                    <Button
+                                    Grid.Column="3"
+                                    Style="{StaticResource ToolbarButtonStyle}"
+                                    Click="EditorGenerate_Click"
+                                    ToolTipService.ToolTip="Generate password"
+                                    VerticalAlignment="Center">
+                                        <FontIcon Glyph="&#xE8B1;" FontSize="14" />
+                                    </Button>
                                 </Grid>
 
-                                <TextBlock
-                                Text="Codes refresh every 30 seconds, like a phone authenticator app."
-                                FontSize="11"
-                                Opacity="0.5"
-                                Margin="0,6,0,0" />
+                                <!-- Strength meter -->
+                                <StackPanel
+                                Margin="0,10,0,0"
+                                Spacing="6"
+                                Visibility="{x:Bind ViewModel.HasEditPassword, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <ProgressBar Maximum="1" Value="{x:Bind ViewModel.EditPasswordStrength, Mode=OneWay}" Height="4" />
+                                    <TextBlock Text="{x:Bind ViewModel.EditPasswordStrengthText, Mode=OneWay}" FontSize="11" Opacity="0.6" />
+                                </StackPanel>
                             </StackPanel>
                         </StackPanel>
                     </Border>
 
-                    <!-- Secret Section -->
-                    <TextBlock Text="Secret" Style="{StaticResource SectionHeader}" />
+                    <!-- The tab selector sits outside the card and shares the section-title
+                         typography with the "Account" header, so it reads as the heading of the
+                         card that hosts the selected tab's content. -->
+                    <SelectorBar x:Name="EditorTabs" Margin="0,0,0,12">
+                        <SelectorBarItem Text="Note" FontSize="15" FontWeight="SemiBold">
+                            <SelectorBarItem.Icon>
+                                <FontIcon Glyph="&#xE70B;" FontSize="15" />
+                            </SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem Text="OTP" FontSize="15" FontWeight="SemiBold">
+                            <SelectorBarItem.Icon>
+                                <FontIcon Glyph="&#xE192;" FontSize="15" />
+                            </SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem Text="History" FontSize="15" FontWeight="SemiBold">
+                            <SelectorBarItem.Icon>
+                                <FontIcon Glyph="&#xE81C;" FontSize="15" />
+                            </SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                    </SelectorBar>
 
                     <Border Style="{StaticResource SectionCard}">
-                        <StackPanel Spacing="0">
-                            <TextBlock Text="Secret" Style="{StaticResource SettingTitle}" />
-                            <TextBlock
-                            Text="Extra hidden field for API keys, recovery codes, or security answers."
-                            Style="{StaticResource SettingSubtitle}" />
+                        <Grid>
+                        <!-- Note tab -->
+                        <StackPanel x:Name="NotePanel" Spacing="0">
+                                    <StackPanel Orientation="Horizontal" Spacing="2">
+                                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Bold" Click="NoteBold_Click"><FontIcon Glyph="&#xE8DD;" FontSize="14" /></Button>
+                                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Italic" Click="NoteItalic_Click"><FontIcon Glyph="&#xE8DB;" FontSize="14" /></Button>
+                                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Strikethrough" Click="NoteStrikethrough_Click"><FontIcon Glyph="&#xEDE0;" FontSize="14" /></Button>
+                                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Inline code" Click="NoteCode_Click"><FontIcon Glyph="&#xE84B;" FontSize="14" /></Button>
+                                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Bulleted list" Click="NoteList_Click"><FontIcon Glyph="&#xE8FD;" FontSize="14" /></Button>
+                                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Numbered list" Click="NoteOrderedList_Click"><FontIcon Glyph="&#xE700;" FontSize="14" /></Button>
+                                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Task list" Click="NoteTaskList_Click"><FontIcon Glyph="&#xE73A;" FontSize="14" /></Button>
+                                        <Button Style="{StaticResource ToolbarButtonStyle}" ToolTipService.ToolTip="Quote" Click="NoteQuote_Click"><FontIcon Glyph="&#xE90A;" FontSize="14" /></Button>
+                                    </StackPanel>
+                                    <editor:MarkdownEditor
+                                    x:Name="NoteEditor"
+                                    Height="380"
+                                    Margin="0,8,0,0"
+                                    PlaceholderText="Write a note..."
+                                    MarkdownChanged="NoteEditor_MarkdownChanged" />
+                                </StackPanel>
 
-                            <Grid Margin="0,12,0,0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <PasswordBox
-                                PlaceholderText="Hidden until you peek"
-                                Password="{Binding EditSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                PasswordRevealMode="Peek"
-                                FontFamily="Cascadia Mono,Consolas"
-                                FontSize="13"
-                                Height="36"
-                                VerticalContentAlignment="Center" />
-                                <Button
-                                Grid.Column="1"
-                                Style="{StaticResource ToolbarButtonStyle}"
-                                Click="EditorCopySecret_Click"
-                                ToolTipService.ToolTip="Copy secret"
-                                VerticalAlignment="Center">
-                                    <FontIcon Glyph="&#xE8C8;" FontSize="14" />
-                                </Button>
+                        <!-- OTP tab -->
+                        <StackPanel x:Name="OtpPanel" Spacing="0" Visibility="Collapsed">
+                                    <TextBlock Text="OTP Secret" Style="{StaticResource SettingTitle}" />
+                                    <TextBlock
+                                    Text="Base32 secret key, or an otpauth:// link. Generates standard 30-second one-time codes."
+                                    Style="{StaticResource SettingSubtitle}" />
+
+                                    <Grid Margin="0,12,0,0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <PasswordBox
+                                        PlaceholderText="Base32 secret or otpauth:// uri"
+                                        Password="{Binding EditTotpSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        PasswordRevealMode="Peek"
+                                        FontFamily="Cascadia Mono,Consolas"
+                                        FontSize="13"
+                                        Height="36"
+                                        VerticalContentAlignment="Center" />
+                                        <Button
+                                        Grid.Column="1"
+                                        Style="{StaticResource ActionButton}"
+                                        Click="ScanTotpQr_Click"
+                                        ToolTipService.ToolTip="Scan authenticator QR code with webcam">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE721;" FontSize="14" />
+                                                <TextBlock Text="Scan QR" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+
+                                    <!-- Shareable QR with the live code ticking in its center -->
+                                    <Grid
+                                    Width="228"
+                                    Height="228"
+                                    Margin="0,18,0,0"
+                                    HorizontalAlignment="Center"
+                                    Visibility="{x:Bind ViewModel.HasEditTotpCode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <Border Background="White" CornerRadius="10" Padding="4">
+                                            <Image x:Name="OtpQrImage" Width="220" Height="220" />
+                                        </Border>
+                                        <!-- A QR stays scannable with a small patch over its middle
+                                             because the code is rendered at error-correction level H. -->
+                                        <Border
+                                        Background="White"
+                                        BorderBrush="#D9D9D9"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="14,9"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                            <StackPanel Spacing="5">
+                                                <TextBlock
+                                                Text="{x:Bind ViewModel.EditTotpCode, Mode=OneWay}"
+                                                Foreground="Black"
+                                                FontFamily="Cascadia Mono,Consolas"
+                                                FontSize="17"
+                                                FontWeight="SemiBold"
+                                                TextAlignment="Center" />
+                                                <ProgressBar
+                                                Width="96"
+                                                Height="3"
+                                                Maximum="1"
+                                                Value="{x:Bind ViewModel.EditTotpProgress, Mode=OneWay}"
+                                                Foreground="#0F6CBD" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+
+                                    <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    Margin="0,12,0,0"
+                                    HorizontalAlignment="Center"
+                                    Visibility="{x:Bind ViewModel.HasEditTotpCode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <Button
+                                        Style="{StaticResource ActionButton}"
+                                        Click="EditorCopyTotp_Click"
+                                        ToolTipService.ToolTip="Copy the current code">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                                                <TextBlock Text="Copy code" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button
+                                        Style="{StaticResource ActionButton}"
+                                        Click="CopyOtpUri_Click"
+                                        ToolTipService.ToolTip="Copy the otpauth:// link">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE71B;" FontSize="14" />
+                                                <TextBlock Text="Copy link" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <TextBlock
+                                    Text="Scan the QR with another device's authenticator app to share this code."
+                                    FontSize="11"
+                                    Opacity="0.5"
+                                    Margin="0,6,0,0"
+                                    HorizontalAlignment="Center"
+                                    Visibility="{x:Bind ViewModel.HasEditTotpCode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                    <TextBlock
+                                    Text="With a valid secret set, this tab shows a shareable QR code with the live code ticking in its center."
+                                    FontSize="11"
+                                    Opacity="0.5"
+                                    Margin="0,12,0,0"
+                                    TextWrapping="Wrap"
+                                    Visibility="{x:Bind ViewModel.HasEditTotpCode, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                </StackPanel>
+
+                        <!-- History tab -->
+                        <StackPanel x:Name="HistoryPanel" Spacing="0" Visibility="Collapsed">
+                                    <TextBlock Text="Credential history" Style="{StaticResource SettingTitle}" />
+                                    <TextBlock
+                                    Text="Previous usernames and passwords for this account. Saving a change keeps the pair that is leaving here."
+                                    Style="{StaticResource SettingSubtitle}" />
+
+                                    <ItemsControl
+                                    Margin="0,14,0,0"
+                                    ItemsSource="{x:Bind ViewModel.HistoryItems, Mode=OneWay}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:VaultHistoryItem">
+                                                <Border Style="{StaticResource HistoryCard}">
+                                                    <StackPanel Spacing="6">
+                                                        <Grid ColumnDefinitions="*,Auto">
+                                                            <TextBlock
+                                                            Text="{x:Bind ChangedText}"
+                                                            FontSize="11"
+                                                            Opacity="0.6"
+                                                            VerticalAlignment="Center" />
+                                                            <StackPanel
+                                                            Grid.Column="1"
+                                                            Orientation="Horizontal"
+                                                            Spacing="2"
+                                                            VerticalAlignment="Center">
+                                                                <Button
+                                                                Style="{StaticResource ToolbarButtonStyle}"
+                                                                Tag="{Binding}"
+                                                                Click="HistoryReveal_Click"
+                                                                ToolTipService.ToolTip="Show password">
+                                                                    <FontIcon Glyph="{x:Bind EyeGlyph, Mode=OneWay}" FontSize="13" />
+                                                                </Button>
+                                                                <Button
+                                                                Style="{StaticResource ToolbarButtonStyle}"
+                                                                Tag="{Binding}"
+                                                                Click="HistoryCopyUsername_Click"
+                                                                ToolTipService.ToolTip="Copy username"
+                                                                Visibility="{x:Bind HasUsername, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                                    <FontIcon Glyph="&#xE77B;" FontSize="13" />
+                                                                </Button>
+                                                                <Button
+                                                                Style="{StaticResource ToolbarButtonStyle}"
+                                                                Tag="{Binding}"
+                                                                Click="HistoryCopyPassword_Click"
+                                                                ToolTipService.ToolTip="Copy password"
+                                                                Visibility="{x:Bind HasPassword, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                                    <FontIcon Glyph="&#xE8C8;" FontSize="13" />
+                                                                </Button>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <TextBlock
+                                                        Text="{x:Bind Username}"
+                                                        FontFamily="Cascadia Mono,Consolas"
+                                                        FontSize="12"
+                                                        Opacity="0.8"
+                                                        TextTrimming="CharacterEllipsis"
+                                                        Visibility="{x:Bind HasUsername, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                        <TextBlock
+                                                        Text="{Binding DisplayPassword, Mode=OneWay}"
+                                                        FontFamily="Cascadia Mono,Consolas"
+                                                        FontSize="12"
+                                                        TextTrimming="CharacterEllipsis"
+                                                        Visibility="{x:Bind HasPassword, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <TextBlock
+                                    Text="No history yet. Changing the username or password archives the previous pair here."
+                                    FontSize="12"
+                                    Opacity="0.6"
+                                    Margin="0,4,0,0"
+                                    TextWrapping="Wrap"
+                                    Visibility="{x:Bind ViewModel.HasHistory, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                </StackPanel>
                             </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Note Section -->
-                    <TextBlock Text="Note" Style="{StaticResource SectionHeader}" />
-
-                    <Border Style="{StaticResource SectionCard}">
-                        <StackPanel Spacing="0">
-                            <TextBlock Text="Note" Style="{StaticResource SettingTitle}" />
-                            <TextBlock Text="Anything else worth remembering about this account." Style="{StaticResource SettingSubtitle}" />
-                            <TextBox
-                            PlaceholderText="Add a note"
-                            Text="{Binding EditNote, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            AcceptsReturn="True"
-                            TextWrapping="Wrap"
-                            MinHeight="96"
-                            Margin="0,12,0,0" />
-                        </StackPanel>
                     </Border>
 
                 </StackPanel>

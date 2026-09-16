@@ -14,8 +14,10 @@ namespace Evania.ViewModels;
 /// Drives the vault page: the list-vs-editor split, the per-site grouping, and the live OTP codes.
 /// Accounts live in the database's "vault" collection through <see cref="VaultService"/>, where
 /// each site owns its accounts; this view model flattens them into list items and regroups them for
-/// display. Whether entries are encrypted at rest is the database's own setting, and
-/// <see cref="ShowUnencryptedWarning"/> keeps the user honest when it is off.
+/// display. The editor itself is sectioned - an Account card, then Note/OTP/History tabs - with the
+/// credential audit for the open account held in <see cref="HistoryItems"/>. Whether entries are
+/// encrypted at rest is the database's own setting, and <see cref="ShowUnencryptedWarning"/> keeps
+/// the user honest when it is off.
 /// </summary>
 public partial class VaultPageViewModel : ObservableObject
 {
@@ -33,6 +35,9 @@ public partial class VaultPageViewModel : ObservableObject
 
     /// <summary>Grouped list source: accounts sharing a site name, one group per site.</summary>
     public IReadOnlyList<VaultSiteGroup> Groups { get; private set; } = [];
+
+    /// <summary>The open account's credential audit, newest first, for the editor's History tab.</summary>
+    public ObservableCollection<VaultHistoryItem> HistoryItems { get; } = new();
 
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
@@ -67,17 +72,10 @@ public partial class VaultPageViewModel : ObservableObject
     public partial string EditUsername { get; set; } = string.Empty;
 
     [ObservableProperty]
-    public partial string EditEmail { get; set; } = string.Empty;
-
-    [ObservableProperty]
     public partial string EditPassword { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial string EditTotpSecret { get; set; } = string.Empty;
-
-    /// <summary>Extra hidden field for API keys, recovery codes, and similar per-account secrets.</summary>
-    [ObservableProperty]
-    public partial string EditSecret { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial string EditNote { get; set; } = string.Empty;
@@ -96,6 +94,10 @@ public partial class VaultPageViewModel : ObservableObject
     [ObservableProperty]
     public partial string EditPasswordStrengthText { get; set; } = string.Empty;
 
+    /// <summary>When the credentials last changed, from the audit trail; empty for a new account.</summary>
+    [ObservableProperty]
+    public partial string LastChangedText { get; set; } = string.Empty;
+
     public bool HasError => ErrorMessage.Length > 0;
 
     public bool HasStatus => StatusMessage.Length > 0;
@@ -106,14 +108,14 @@ public partial class VaultPageViewModel : ObservableObject
 
     public bool HasEditPassword => (EditPassword ?? string.Empty).Length > 0;
 
+    public bool HasHistory => HistoryItems.Count > 0;
+
+    public bool HasLastChanged => LastChangedText.Length > 0;
+
     /// <summary>False while the editor holds a brand-new account, which has nothing to delete yet.</summary>
     public bool IsExistingEntry => currentEntry is not null;
 
     public int SiteCount => Groups.Count;
-
-    public string EditTimestampsText => currentEntry is null || loadedAccount is null
-        ? string.Empty
-        : $"Created {loadedAccount.CreatedAt.ToLocalTime():d MMM yyyy} · Updated {loadedAccount.UpdatedAt.ToLocalTime():d MMM yyyy}";
 
     /// <summary>True when saving would change anything - the back button asks before discarding.</summary>
     public bool IsDirty
@@ -127,10 +129,8 @@ public partial class VaultPageViewModel : ObservableObject
 
             return !string.Equals(Trimmed(EditSite), Trimmed(loadedSiteName), StringComparison.Ordinal)
                 || !string.Equals(Trimmed(EditUsername), Trimmed(loadedAccount.Username), StringComparison.Ordinal)
-                || !string.Equals(Trimmed(EditEmail), Trimmed(loadedAccount.Email), StringComparison.Ordinal)
                 || !string.Equals(EditPassword ?? string.Empty, loadedAccount.Password ?? string.Empty, StringComparison.Ordinal)
                 || !string.Equals(Trimmed(EditTotpSecret), Trimmed(loadedAccount.OtpSecret), StringComparison.Ordinal)
-                || !string.Equals(EditSecret ?? string.Empty, loadedAccount.Secret ?? string.Empty, StringComparison.Ordinal)
                 || !string.Equals(EditNote ?? string.Empty, loadedAccount.Note ?? string.Empty, StringComparison.Ordinal);
         }
     }
@@ -154,6 +154,8 @@ public partial class VaultPageViewModel : ObservableObject
     }
 
     partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(IsEmpty));
+
+    partial void OnLastChangedTextChanged(string value) => OnPropertyChanged(nameof(HasLastChanged));
 
     public async Task LoadAsync()
     {
@@ -223,14 +225,12 @@ public partial class VaultPageViewModel : ObservableObject
 
         EditSite = loadedSiteName;
         EditUsername = string.Empty;
-        EditEmail = string.Empty;
         EditPassword = string.Empty;
         EditTotpSecret = string.Empty;
-        EditSecret = string.Empty;
         EditNote = string.Empty;
         EditTotpCode = string.Empty;
+        ResetHistory();
         IsEditing = true;
-        OnPropertyChanged(nameof(EditTimestampsText));
     }
 
     public async Task OpenEntryAsync(VaultListItem item)
@@ -256,14 +256,12 @@ public partial class VaultPageViewModel : ObservableObject
 
             EditSite = loadedSiteName;
             EditUsername = loadedAccount.Username;
-            EditEmail = loadedAccount.Email;
             EditPassword = loadedAccount.Password;
             EditTotpSecret = loadedAccount.OtpSecret;
-            EditSecret = loadedAccount.Secret;
             EditNote = loadedAccount.Note;
             IsEditing = true;
+            await LoadHistoryAsync(loaded.Value.Account.Id);
             RefreshTotp();
-            OnPropertyChanged(nameof(EditTimestampsText));
         }
         catch (Exception ex)
         {
@@ -282,6 +280,7 @@ public partial class VaultPageViewModel : ObservableObject
         OnPropertyChanged(nameof(IsExistingEntry));
         loadedAccount = null;
         EditTotpCode = string.Empty;
+        ResetHistory();
     }
 
     /// <summary>Returns false when validation failed; the reason lands in <see cref="ErrorMessage"/>.</summary>
@@ -301,15 +300,13 @@ public partial class VaultPageViewModel : ObservableObject
         }
 
         bool hasContent = !string.IsNullOrWhiteSpace(EditUsername) ||
-                          !string.IsNullOrWhiteSpace(EditEmail) ||
                           !string.IsNullOrWhiteSpace(EditPassword) ||
                           !string.IsNullOrWhiteSpace(EditTotpSecret) ||
-                          !string.IsNullOrWhiteSpace(EditSecret) ||
                           !string.IsNullOrWhiteSpace(EditNote);
 
         if (!hasContent)
         {
-            ErrorMessage = "Add at least one of a username, password, OTP secret, secret, or note.";
+            ErrorMessage = "Add at least one of a username, password, OTP secret, or note.";
 
             return false;
         }
@@ -329,12 +326,10 @@ public partial class VaultPageViewModel : ObservableObject
             VaultAccount account = new()
             {
                 Username = Trimmed(EditUsername),
-                Email = Trimmed(EditEmail),
                 Password = EditPassword ?? string.Empty,
                 OtpSecret = TotpService.TryParseSecret(EditTotpSecret, out string normalizedSecret, out _, out _)
                     ? normalizedSecret
                     : Trimmed(EditTotpSecret),
-                Secret = EditSecret ?? string.Empty,
                 Note = EditNote ?? string.Empty,
             };
 
@@ -461,6 +456,30 @@ public partial class VaultPageViewModel : ObservableObject
     public void ClearError() => ErrorMessage = string.Empty;
 
     public void ClearStatus() => StatusMessage = string.Empty;
+
+    private async Task LoadHistoryAsync(ObjectId accountId)
+    {
+        IReadOnlyList<VaultHistoryItem> items = await VaultService.GetHistoryAsync(accountId);
+
+        HistoryItems.Clear();
+        foreach (VaultHistoryItem item in items)
+        {
+            HistoryItems.Add(item);
+        }
+
+        OnPropertyChanged(nameof(HasHistory));
+
+        LastChangedText = items.Count > 0
+            ? $"Credentials last changed {items[0].ChangedAt.ToLocalTime():d MMM yyyy}"
+            : string.Empty;
+    }
+
+    private void ResetHistory()
+    {
+        HistoryItems.Clear();
+        OnPropertyChanged(nameof(HasHistory));
+        LastChangedText = string.Empty;
+    }
 
     private void UpdatePasswordStrength()
     {

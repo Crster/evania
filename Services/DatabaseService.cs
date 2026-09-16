@@ -239,6 +239,17 @@ public static class DatabaseService
                 {
                 }
 
+                // Later vault reworks narrowed accounts to username/password/note/otp; documents
+                // written before that still carry email/secret/timestamp fields. The migration
+                // rewrites them into the current shape once and then finds nothing to do.
+                try
+                {
+                    MigrateVaultDocuments();
+                }
+                catch (Exception)
+                {
+                }
+
                 Status = new DatabaseStatus(true, !string.IsNullOrEmpty(password), null, SizeOf(path));
             }
             catch (Exception ex)
@@ -475,6 +486,99 @@ public static class DatabaseService
             return RequireEngine().GetCollection<VaultSite>("vault").Delete(id);
         }
     }
+
+    /// <summary>The credential audit trail for one account: pairs it used before being replaced, newest first.</summary>
+    public static IReadOnlyList<VaultHistoryEntry> GetVaultHistory(ObjectId accountId)
+    {
+        lock (Gate)
+        {
+            ILiteCollection<VaultHistoryEntry> history =
+                RequireEngine().GetCollection<VaultHistoryEntry>("vault_history");
+            history.EnsureIndex(entry => entry.AccountId);
+
+            return history.Find(entry => entry.AccountId == accountId)
+                .OrderByDescending(entry => entry.ChangedAt)
+                .ToList();
+        }
+    }
+
+    public static void InsertVaultHistory(VaultHistoryEntry entry)
+    {
+        lock (Gate)
+        {
+            RequireEngine().GetCollection<VaultHistoryEntry>("vault_history").Insert(entry);
+        }
+    }
+
+    public static void DeleteVaultHistory(ObjectId accountId)
+    {
+        lock (Gate)
+        {
+            RequireEngine().GetCollection<VaultHistoryEntry>("vault_history")
+                .DeleteMany(entry => entry.AccountId == accountId);
+        }
+    }
+
+    /// <summary>
+    /// Rewrites pre-rework vault documents into the current shape: the account-level email/secret
+    /// and the timestamp fields disappear, and an email survives only where its account had no
+    /// username to lose. Works on raw documents because the typed mapper no longer declares the
+    /// old fields, so their values would be dropped the moment they were read.
+    /// </summary>
+    private static void MigrateVaultDocuments()
+    {
+        if (engine is null)
+        {
+            return;
+        }
+
+        ILiteCollection<BsonDocument> vault = engine.GetCollection("vault");
+        List<BsonDocument> rewritten = new();
+
+        foreach (BsonDocument document in vault.FindAll())
+        {
+            bool changed = document.Remove("createdat");
+            changed |= document.Remove("updatedat");
+
+            if (document["accounts"] is BsonArray accounts)
+            {
+                foreach (BsonValue value in accounts)
+                {
+                    if (value is not BsonDocument account)
+                    {
+                        continue;
+                    }
+
+                    string username = StringValue(account, "username");
+                    string email = StringValue(account, "email");
+
+                    if (account.Remove("email") &&
+                        string.IsNullOrWhiteSpace(username) &&
+                        !string.IsNullOrWhiteSpace(email))
+                    {
+                        account["username"] = email;
+                    }
+
+                    changed |= account.Remove("secret");
+                    changed |= account.Remove("createdat");
+                    changed |= account.Remove("updatedat");
+                }
+            }
+
+            if (changed)
+            {
+                rewritten.Add(document);
+            }
+        }
+
+        if (rewritten.Count > 0)
+        {
+            vault.Update(rewritten);
+        }
+    }
+
+    private static string StringValue(BsonDocument document, string key) =>
+        document.TryGetValue(key, out BsonValue? value) && value.IsString ? value.AsString : string.Empty;
 
     /// <summary>
     /// Makes the data file match the requested path and encryption state: relocate it, then rebuild

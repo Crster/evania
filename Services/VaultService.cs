@@ -9,11 +9,13 @@ namespace Evania.Services;
 
 /// <summary>
 /// Async facade over the database's "vault" collection, shaped the way the data is stored: sites
-/// own their accounts as an aggregate. Every operation here routes through the aggregate - saving
-/// an account finds or creates its site document, deleting an account removes the site when the
-/// last account goes with it - so the list can simply group by site. Encryption is whatever the
-/// database itself carries: with Settings' database encryption on, LiteDB encrypts the file under
-/// the master password from Windows Credential Manager; with it off, entries are readable by anyone
+/// own their accounts as an aggregate, each account carrying exactly username, password, note, and
+/// otp under the site's name. Every operation here routes through the aggregate - saving an
+/// account finds or creates its site document, deleting an account removes the site when the last
+/// account goes with it - so the list can simply group by site. Replaced credentials are archived
+/// into the "vault_history" collection as an audit trail. Encryption is whatever the database
+/// itself carries: with Settings' database encryption on, LiteDB encrypts the file under the
+/// master password from Windows Credential Manager; with it off, entries are readable by anyone
 /// who can open the file, and the page says so out loud.
 /// </summary>
 public static class VaultService
@@ -34,16 +36,14 @@ public static class VaultService
             {
                 items = items.Where(item =>
                     Contains(item.Site, normalizedFilter) ||
-                    Contains(item.Username, normalizedFilter) ||
-                    Contains(item.Email, normalizedFilter));
+                    Contains(item.Username, normalizedFilter));
             }
 
-            // Site name, then account name, then recency: the grouping in the view model relies on
-            // every account of a site being contiguous in this order.
+            // Site name, then account name: the grouping in the view model relies on every account
+            // of a site being contiguous in this order.
             return (IReadOnlyList<VaultListItem>)items
                 .OrderBy(item => item.Site, NameOrder)
                 .ThenBy(item => item.Username, NameOrder)
-                .ThenByDescending(item => item.UpdatedAt)
                 .ToList();
         });
 
@@ -73,7 +73,8 @@ public static class VaultService
     /// Saves one account into the site aggregate. An edited account keeps its identity and follows a
     /// site rename; a rename that collides with another spelling of the same site moves the account
     /// into that document instead of forking a second one. A brand-new account joins the site its
-    /// name matches case-insensitively, creating the site when none does.
+    /// name matches case-insensitively, creating the site when none does. When the edit replaces the
+    /// username or the password, the pair that is leaving goes to history first.
     /// </summary>
     public static Task<(ObjectId SiteId, ObjectId AccountId)> SaveAccountAsync(
         ObjectId? siteId, ObjectId? accountId, string siteName, VaultAccount account) =>
@@ -81,7 +82,6 @@ public static class VaultService
         {
             IReadOnlyList<VaultSite> sites = DatabaseService.GetVaultSites();
             DateTime now = DateTime.UtcNow;
-            account.UpdatedAt = now;
 
             VaultSite? current = accountId is { } id
                 ? sites.FirstOrDefault(site => site.Accounts.Any(entry => entry.Id == id))
@@ -90,12 +90,22 @@ public static class VaultService
             if (current is not null)
             {
                 VaultAccount existing = current.Accounts.First(entry => entry.Id == accountId);
+
+                if (!string.Equals(existing.Username, account.Username, StringComparison.Ordinal) ||
+                    !string.Equals(existing.Password, account.Password, StringComparison.Ordinal))
+                {
+                    DatabaseService.InsertVaultHistory(new VaultHistoryEntry
+                    {
+                        SiteId = current.Id,
+                        AccountId = existing.Id,
+                        Site = current.Site,
+                        Username = existing.Username,
+                        Password = existing.Password,
+                        ChangedAt = now,
+                    });
+                }
+
                 account.Id = existing.Id;
-                account.CreatedAt = existing.CreatedAt;
-            }
-            else
-            {
-                account.CreatedAt = now;
             }
 
             string requestedName = siteName.Trim();
@@ -104,11 +114,10 @@ public static class VaultService
 
             if (destination is null)
             {
-                destination = current ?? new VaultSite { Site = requestedName, CreatedAt = now };
+                destination = current ?? new VaultSite { Site = requestedName };
             }
 
             destination.Site = requestedName;
-            destination.UpdatedAt = now;
 
             if (current is not null && !ReferenceEquals(current, destination))
             {
@@ -122,7 +131,6 @@ public static class VaultService
                 }
                 else
                 {
-                    current.UpdatedAt = now;
                     DatabaseService.UpsertVaultSite(current);
                 }
             }
@@ -144,6 +152,10 @@ public static class VaultService
     public static Task DeleteAccountAsync(ObjectId siteId, ObjectId accountId) =>
         Task.Run(() =>
         {
+            // History is keyed to the account; with the account gone it is secret data nothing can
+            // ever show, so it goes with the account.
+            DatabaseService.DeleteVaultHistory(accountId);
+
             VaultSite? site = DatabaseService.GetVaultSite(siteId);
             if (site is null)
             {
@@ -159,10 +171,20 @@ public static class VaultService
             }
             else
             {
-                site.UpdatedAt = DateTime.UtcNow;
                 DatabaseService.UpsertVaultSite(site);
             }
         });
+
+    /// <summary>The audit trail for one account, newest first, for the editor's History tab.</summary>
+    public static Task<IReadOnlyList<VaultHistoryItem>> GetHistoryAsync(ObjectId accountId) =>
+        Task.Run(() => (IReadOnlyList<VaultHistoryItem>)DatabaseService.GetVaultHistory(accountId)
+            .Select(entry => new VaultHistoryItem
+            {
+                Username = entry.Username,
+                Password = entry.Password,
+                ChangedAt = entry.ChangedAt,
+            })
+            .ToList());
 
     /// <summary>
     /// Imports a browser CSV export, grouping the rows into site documents as they land. Rows whose
@@ -174,7 +196,6 @@ public static class VaultService
         Task.Run(() =>
         {
             IReadOnlyList<VaultCsvRow> parsed = VaultCsv.FromBrowserExport(csvText);
-            DateTime now = DateTime.UtcNow;
 
             // Stage by site name: existing documents join first so imported rows land on them, and
             // rows for a site the vault has not seen share one new document per site.
@@ -210,14 +231,11 @@ public static class VaultService
 
                 if (!staging.TryGetValue(siteName, out VaultSite? site))
                 {
-                    site = new VaultSite { Site = siteName, CreatedAt = now };
+                    site = new VaultSite { Site = siteName };
                     staging[siteName] = site;
                 }
 
-                row.Account.CreatedAt = now;
-                row.Account.UpdatedAt = now;
                 site.Accounts.Add(row.Account);
-                site.UpdatedAt = now;
                 changed.Add(site);
                 imported++;
             }
@@ -240,12 +258,8 @@ public static class VaultService
         AccountId = account.Id,
         Site = site.Site,
         Username = account.Username,
-        Email = account.Email,
-        HasPassword = (account.Password ?? string.Empty).Length > 0,
         HasTotp = !string.IsNullOrWhiteSpace(account.OtpSecret),
-        HasSecret = !string.IsNullOrWhiteSpace(account.Secret),
         HasNote = !string.IsNullOrWhiteSpace(account.Note),
-        UpdatedAt = account.UpdatedAt,
     };
 
     private static string Fingerprint(string site, VaultAccount account) =>

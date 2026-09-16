@@ -52,6 +52,7 @@ public partial class App : Application
         // key launched; this subscription is what wakes the main instance for those.
         AppInstance.GetCurrent().Activated += OnActivated;
 
+
         string? copilotKeyState = CopilotKeyStateFrom(AppInstance.GetCurrent().GetActivatedEventArgs());
 
         MainWindow = new MainWindow();

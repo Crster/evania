@@ -9,9 +9,12 @@ namespace Evania.Models;
 /// <summary>
 /// One site in the database's "vault" collection: the aggregate root that owns every account the
 /// user keeps for that site, so "multiple accounts per site" is the database's own shape. A site
-/// document exists only while it has accounts. Protection is the database's own: when Settings has
-/// database encryption on, LiteDB encrypts the file with the master password from Windows
-/// Credential Manager; when it is off, these fields sit in the file in plain text.
+/// document exists only while it has accounts. Each account carries exactly four content fields -
+/// username, password, note, and otp - under the site's name, and nothing else; the audit trail of
+/// replaced credentials lives in the separate "vault_history" collection. Protection is the
+/// database's own: when Settings has database encryption on, LiteDB encrypts the file with the
+/// master password from Windows Credential Manager; when it is off, these fields sit in the file
+/// in plain text.
 /// </summary>
 public sealed class VaultSite
 {
@@ -28,26 +31,21 @@ public sealed class VaultSite
     public string Site { get => site; set => site = value ?? string.Empty; }
 
     public List<VaultAccount> Accounts { get; set; } = new();
-
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>Stamps the newest change across the accounts, so the aggregate can be sorted by recency.</summary>
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>
 /// One account under a site. Embedded in its <see cref="VaultSite"/> rather than stored flat:
 /// adding or removing the last account creates or removes the site with it, and an account moved
-/// between spellings of the same site stays inside one aggregate.
+/// between spellings of the same site stays inside one aggregate. The username field holds
+/// whichever identity the site signs in with - a name or an email address - and the password field
+/// holds its secret, whatever kind of secret that is.
 /// </summary>
 public sealed class VaultAccount
 {
     private string username = string.Empty;
-    private string email = string.Empty;
     private string password = string.Empty;
-    private string otpSecret = string.Empty;
-    private string secret = string.Empty;
     private string note = string.Empty;
+    private string otpSecret = string.Empty;
 
     public ObjectId Id { get; set; } = ObjectId.NewObjectId();
 
@@ -58,26 +56,43 @@ public sealed class VaultAccount
     /// </summary>
     public string Username { get => username; set => username = value ?? string.Empty; }
 
-    public string Email { get => email; set => email = value ?? string.Empty; }
-
-    /// <summary>
-    /// Multi-line on purpose: users paste recovery codes, private keys, and other long secrets here,
-    /// not just single-line passwords.
-    /// </summary>
     public string Password { get => password; set => password = value ?? string.Empty; }
+
+    /// <summary>Free-form markdown note, written with the markdown editor and shown in the editor only.</summary>
+    public string Note { get => note; set => note = value ?? string.Empty; }
 
     /// <summary>Canonical base32 TOTP secret; empty when the account has no authenticator.</summary>
     public string OtpSecret { get => otpSecret; set => otpSecret = value ?? string.Empty; }
+}
 
-    /// <summary>Extra hidden field for misc secrets - API keys, recovery codes, security answers.</summary>
-    public string Secret { get => secret; set => secret = value ?? string.Empty; }
+/// <summary>
+/// One "vault_history" row: the username and password an account used immediately before a save
+/// replaced them. Written whenever an edit changes either credential, keyed to the account so the
+/// editor's History tab can list them newest first, and deleted with the account - history for an
+/// account that no longer exists is secret data nothing can ever show.
+/// </summary>
+public sealed class VaultHistoryEntry
+{
+    private string site = string.Empty;
+    private string username = string.Empty;
+    private string password = string.Empty;
 
-    /// <summary>Free-form note shown in the editor only.</summary>
-    public string Note { get => note; set => note = value ?? string.Empty; }
+    [BsonId]
+    public ObjectId Id { get; set; } = ObjectId.NewObjectId();
 
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public ObjectId SiteId { get; set; } = ObjectId.Empty;
 
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public ObjectId AccountId { get; set; } = ObjectId.Empty;
+
+    /// <summary>The site name as it was spelled when the credentials were replaced - a later rename
+    /// must not rewrite history.</summary>
+    public string Site { get => site; set => site = value ?? string.Empty; }
+
+    public string Username { get => username; set => username = value ?? string.Empty; }
+
+    public string Password { get => password; set => password = value ?? string.Empty; }
+
+    public DateTime ChangedAt { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>
@@ -94,17 +109,9 @@ public partial class VaultListItem : ObservableObject
 
     public required string Username { get; init; }
 
-    public required string Email { get; init; }
-
-    public required bool HasPassword { get; init; }
-
     public required bool HasTotp { get; init; }
 
-    public required bool HasSecret { get; init; }
-
     public required bool HasNote { get; init; }
-
-    public required DateTime UpdatedAt { get; init; }
 
     [ObservableProperty]
     public partial string TotpCode { get; set; } = string.Empty;
@@ -112,33 +119,39 @@ public partial class VaultListItem : ObservableObject
     [ObservableProperty]
     public partial double TotpProgress { get; set; }
 
-    public string DisplayName => !string.IsNullOrWhiteSpace(Username) ? Username
-        : !string.IsNullOrWhiteSpace(Email) ? Email
-        : "Unnamed account";
+    public string DisplayName => !string.IsNullOrWhiteSpace(Username) ? Username : "Unnamed account";
+}
 
-    /// <summary>The other half of the identity when both are present - the email under a username.</summary>
-    public string SecondaryText => !string.IsNullOrWhiteSpace(Username) && !string.IsNullOrWhiteSpace(Email)
-        ? Email
-        : string.Empty;
+/// <summary>
+/// UI projection of one history row for the editor's History tab. It holds the real credentials
+/// so reveal and copy work without a database round trip - the editor session already carries the
+/// account's live secrets - but the password draws masked until the row's toggle flips.
+/// </summary>
+public partial class VaultHistoryItem : ObservableObject
+{
+    public required string Username { get; init; }
 
-    public bool HasSecondaryText => SecondaryText.Length > 0;
+    public required string Password { get; init; }
 
-    public string UpdatedText
+    public required DateTime ChangedAt { get; init; }
+
+    [ObservableProperty]
+    public partial bool IsPasswordVisible { get; set; }
+
+    public string DisplayPassword => IsPasswordVisible ? Password : new string('●', Password.Length);
+
+    public bool HasUsername => Username.Length > 0;
+
+    public bool HasPassword => Password.Length > 0;
+
+    public string ChangedText => ChangedAt.ToLocalTime().ToString("d MMM yyyy, HH:mm");
+
+    public string EyeGlyph => IsPasswordVisible ? "\uED1A" : "\uE7B3";
+
+    partial void OnIsPasswordVisibleChanged(bool value)
     {
-        get
-        {
-            TimeSpan elapsed = DateTime.UtcNow - UpdatedAt.ToUniversalTime();
-
-            return elapsed.TotalMinutes switch
-            {
-                < 1 => "just now",
-                < 60 => $"{(int)elapsed.TotalMinutes} min ago",
-                < 24 * 60 => $"{(int)elapsed.TotalHours} hr ago",
-                < 30 * 24 * 60 => $"{(int)elapsed.TotalDays} day ago",
-                < 365 * 24 * 60 => $"{(int)(elapsed.TotalDays / 30)} mo ago",
-                _ => $"{(int)(elapsed.TotalDays / 365)} yr ago"
-            };
-        }
+        OnPropertyChanged(nameof(DisplayPassword));
+        OnPropertyChanged(nameof(EyeGlyph));
     }
 }
 

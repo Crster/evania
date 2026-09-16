@@ -88,6 +88,33 @@ public static class TotpService
     public static double WindowProgress(int period = DefaultPeriod, DateTime? utcNow = null) =>
         (UnixSeconds(utcNow ?? DateTime.UtcNow) % period) / (double)period;
 
+    /// <summary>
+    /// Builds the otpauth:// URI that authenticator apps understand, for the shareable QR code. The
+    /// issuer names the site and the label names the account, so a scanned entry reads the way the
+    /// user expects inside the phone app.
+    /// </summary>
+    public static string BuildOtpAuthUri(
+        string secret, string issuer, string account, int digits = DefaultDigits, int period = DefaultPeriod)
+    {
+        string trimmedIssuer = issuer.Trim();
+        string trimmedAccount = account.Trim();
+        string label = trimmedIssuer.Length > 0 ? $"{trimmedIssuer}:{trimmedAccount}" : trimmedAccount;
+
+        System.Text.StringBuilder builder = new("otpauth://totp/");
+        builder.Append(WebUtility.UrlEncode(label));
+        builder.Append("?secret=").Append(secret);
+
+        if (trimmedIssuer.Length > 0)
+        {
+            builder.Append("&issuer=").Append(WebUtility.UrlEncode(trimmedIssuer));
+        }
+
+        builder.Append("&digits=").Append(digits);
+        builder.Append("&period=").Append(period);
+
+        return builder.ToString();
+    }
+
     private static long UnixSeconds(DateTime utc) =>
         (long)(utc.ToUniversalTime() - DateTime.UnixEpoch).TotalSeconds;
 

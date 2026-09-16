@@ -209,6 +209,11 @@ public sealed partial class MainWindow : Window
         // be closed or killed. Re-selecting the page already shown gets here too, but a checkpoint
         // with nothing in the log costs nothing, so that is not worth a second same-page test.
         // Off the UI thread because it is disk work and it queues behind any save still running.
+        // A search belongs to the page it was typed on, so leaving the page clears it before the
+        // next one can pick the stale text up; the TextChanged raise also resets the outgoing
+        // page's filter while it is still subscribed.
+        TitleBarSearchBox.Text = string.Empty;
+
         if (NavigationPresenter.Content is not null)
         {
             _ = Task.Run(DatabaseService.Checkpoint);

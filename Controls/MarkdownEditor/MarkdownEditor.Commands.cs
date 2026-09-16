@@ -11,6 +11,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
+using Windows.Storage.Streams;
 
 namespace Evania.Controls.MarkdownEditor;
 
@@ -415,7 +417,16 @@ public sealed partial class MarkdownEditor
         engine.Invalidate();
 
         int delta = replacement.Length - original.Length;
-        SetSelection(new TextRange(selection.Start, Math.Max(span.Min, selection.End + delta)));
+
+        // Everything on the rewritten lines moves with the prefix change, and a caret stays a caret:
+        // keeping the old anchor while shifting the caret used to select the freshly inserted
+        // marker, so the next typed character replaced "- [ ] " instead of following it. Clamping to
+        // span.Min keeps a caret that sat at the line's start on the content when a prefix is
+        // removed instead of walking it back into the previous line.
+        int Shift(int position) => position >= span.Min ? Math.Max(span.Min, position + delta) : position;
+        SetSelection(selection.IsEmpty
+            ? TextRange.Caret(Shift(selection.End))
+            : new TextRange(Shift(selection.Start), Shift(selection.End)));
     }
 
     /// <summary>
@@ -882,18 +893,34 @@ public sealed partial class MarkdownEditor
     }
 
     /// <summary>
+    /// Asks the host to turn clipboard content that is not text - a bitmap pasted straight from the
+    /// clipboard (screenshot or "copy image") or files copied in the shell - into the markdown to
+    /// insert at the caret. The host owns storage, so it persists the payload as attachments.
+    /// Return null to fall back to plain-text pasting. Left null, non-text clipboard content is
+    /// ignored, exactly as before.
+    /// </summary>
+    public Func<ClipboardPasteContent, Task<string?>>? ClipboardPasteHandler { get; set; }
+
+    /// <summary>
     /// Pastes clipboard content as markdown.
     /// </summary>
     /// <remarks>
     /// Plain text is inserted verbatim because it may already be markdown. A bare URL dropped onto a
     /// non-empty selection becomes a link around that selection, which is the one transformation that
-    /// is always what the user meant.
+    /// is always what the user meant. Clipboard images and copied files are offered to
+    /// <see cref="ClipboardPasteHandler"/> first, so a picture lands as an attachment block and a
+    /// copied file as an attachment link.
     /// </remarks>
     public async Task PasteAsync()
     {
         if (IsReadOnly)
         {
             MarkdownEditorLog.Exit("editor is read-only");
+            return;
+        }
+
+        if (await TryPasteAttachmentAsync())
+        {
             return;
         }
 
@@ -955,6 +982,100 @@ public sealed partial class MarkdownEditor
         }
 
         SetSelection(document.Replace(selection.Min, selection.Length, text, MarkdownEditKind.Structural, selection));
+    }
+
+    /// <summary>
+    /// Offers the clipboard's non-text content to <see cref="ClipboardPasteHandler"/> and inserts
+    /// whatever markdown comes back as a standalone block at the caret. Returns false when the
+    /// clipboard holds nothing attachable, so the plain-text paste path takes over.
+    /// </summary>
+    private async Task<bool> TryPasteAttachmentAsync()
+    {
+        Func<ClipboardPasteContent, Task<string?>>? handler = ClipboardPasteHandler;
+        if (handler is null)
+        {
+            return false;
+        }
+
+        ClipboardPasteContent? content = await CaptureClipboardAttachmentAsync();
+        if (content is null)
+        {
+            return false;
+        }
+
+        string? markdown = await handler(content);
+        if (string.IsNullOrEmpty(markdown))
+        {
+            MarkdownEditorLog.Write("paste: clipboard held an attachment but the host returned no markdown");
+            return false;
+        }
+
+        MarkdownEditorLog.Write($"pasting clipboard attachment {MarkdownEditorLog.Snippet(markdown)}");
+        InsertBlock(markdown);
+        return true;
+    }
+
+    /// <summary>
+    /// Reads the clipboard's attachment-shaped content: files copied in the shell first (they carry
+    /// their names), then a bare bitmap from a screenshot or "copy image". Null when neither is
+    /// present or readable, which is the normal case for a text clipboard.
+    /// </summary>
+    private static async Task<ClipboardPasteContent?> CaptureClipboardAttachmentAsync()
+    {
+        try
+        {
+            DataPackageView view = Clipboard.GetContent();
+
+            if (view.Contains(StandardDataFormats.StorageItems))
+            {
+                IReadOnlyList<IStorageItem> items = await view.GetStorageItemsAsync();
+                List<StorageFile> files = new();
+                foreach (IStorageItem item in items)
+                {
+                    if (item is StorageFile file)
+                    {
+                        files.Add(file);
+                    }
+                }
+
+                if (files.Count > 0)
+                {
+                    return new ClipboardPasteContent(files);
+                }
+            }
+
+            if (view.Contains(StandardDataFormats.Bitmap))
+            {
+                RandomAccessStreamReference reference = await view.GetBitmapAsync();
+                using IRandomAccessStreamWithContentType stream = await reference.OpenReadAsync();
+                byte[] bytes = await ReadStreamAsync(stream);
+                if (bytes.Length > 0)
+                {
+                    return new ClipboardPasteContent(bytes, stream.ContentType);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Some sources hand out formats that cannot be opened. That must never break pasting:
+            // the plain-text path below still gets its chance.
+            MarkdownEditorLog.Write($"clipboard attachment capture failed: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads a WinRT stream to the end. The buffer is sized from what actually arrived, since a
+    /// stream may deliver fewer bytes than its reported size claims.
+    /// </summary>
+    private static async Task<byte[]> ReadStreamAsync(IRandomAccessStream stream)
+    {
+        using DataReader reader = new(stream);
+        await reader.LoadAsync((uint)Math.Min(stream.Size, int.MaxValue));
+        byte[] bytes = new byte[reader.UnconsumedBufferLength];
+        reader.ReadBytes(bytes);
+        return bytes;
     }
 
     private static readonly HttpClient HttpTitleClient = CreateHttpTitleClient();

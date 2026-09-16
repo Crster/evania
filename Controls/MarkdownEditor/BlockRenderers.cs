@@ -42,15 +42,14 @@ internal static class BlockRenderers
     public const float MinImageSize = 24f;
 
     /// <summary>
-    /// The rectangle an image block occupies: its own box (see <see cref="BuildImage"/>) centred in
-    /// the content width. Shared by painting, hit-testing and the caret so every consumer agrees on
-    /// where the picture actually is.
+    /// The rectangle an image block occupies: its own box (see <see cref="BuildImage"/>) flush with
+    /// the left edge of the content. Shared by painting, hit-testing and the caret so every consumer
+    /// agrees on where the picture actually is.
     /// </summary>
     public static Rect GetImageBounds(BlockLayout layout)
     {
         float boxWidth = layout.ImageWidth > 0 ? layout.ImageWidth : Math.Min(MaxImageSize, layout.ContentWidth);
-        float left = (layout.ContentWidth - boxWidth) / 2f;
-        return new Rect(left, layout.Y, boxWidth, layout.ImageHeight);
+        return new Rect(0, layout.Y, boxWidth, layout.ImageHeight);
     }
 
     // --- layout -------------------------------------------------------------------------------

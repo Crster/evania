@@ -36,6 +36,7 @@ public sealed partial class NotePage : Page
         SortToggle.IsChecked = ViewModel.SelectedSort == NoteSortOrder.CreatedDescending;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         Editor.ImageResolver = ResolveImageAsync;
+        Editor.ClipboardPasteHandler = PasteAttachmentAsync;
         Editor.LinkRenamed += Editor_LinkRenamed;
         Editor.ViewportChanged += Editor_ViewportChanged;
     }
@@ -273,6 +274,60 @@ public sealed partial class NotePage : Page
             Editor.AppendAttachmentLink(file.Name, AttachmentLinkPrefix + attachment.Id, isImage: false);
         }
     }
+
+    /// <summary>
+    /// Turns clipboard content that is not text into attachments: a pasted bitmap (screenshot or
+    /// "copy image") is stored as a picture and inserted as an image, and files copied in the shell
+    /// are attached - pictures as images, everything else as a link. All of the markdown goes back
+    /// to the editor in one string so a multi-file paste lands as one edit.
+    /// </summary>
+    private async Task<string?> PasteAttachmentAsync(ClipboardPasteContent content)
+    {
+        if (content.ImageBytes is byte[] bytes)
+        {
+            string contentType = content.ContentType.Length > 0 ? content.ContentType : "image/png";
+            string fileName = $"Pasted {DateTime.Now:yyyy-MM-dd HH-mm-ss}{ExtensionForContentType(contentType)}";
+            NoteAttachmentItem? attachment = await ViewModel.AddAttachmentAsync(
+                fileName,
+                contentType,
+                isImage: true,
+                new MemoryStream(bytes));
+            return attachment is null ? null : $"![{fileName}]({AttachmentLinkPrefix}{attachment.Id})";
+        }
+
+        var builder = new System.Text.StringBuilder();
+        foreach (StorageFile file in content.Files)
+        {
+            bool isImage = IsImageFile(file.FileType);
+            NoteAttachmentItem? attachment = await AddAttachmentAsync(file, isImage);
+            if (attachment is null)
+            {
+                continue;
+            }
+
+            string target = AttachmentLinkPrefix + attachment.Id;
+            builder.AppendLine(isImage ? $"![{file.Name}]({target})" : $"[{file.Name}]({target})");
+        }
+
+        string markdown = builder.ToString().TrimEnd();
+        return markdown.Length == 0 ? null : markdown;
+    }
+
+    /// <summary>
+    /// The extension to store a pasted bitmap under, derived from the clipboard's MIME type.
+    /// Anything unrecognised becomes PNG, which is what screenshot tools put on the clipboard.
+    /// </summary>
+    private static string ExtensionForContentType(string contentType) => contentType switch
+    {
+        "image/jpeg" or "image/jpg" => ".jpg",
+        "image/gif" => ".gif",
+        "image/bmp" => ".bmp",
+        "image/webp" => ".webp",
+        _ => ".png",
+    };
+
+    private static bool IsImageFile(string extension)
+        => new[] { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" }.Contains(extension, StringComparer.OrdinalIgnoreCase);
 
     private async void OpenAttachment_Click(object sender, RoutedEventArgs e)
     {

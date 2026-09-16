@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Microsoft.Graphics.Canvas;
@@ -7,6 +8,7 @@ using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.Storage;
 using Windows.UI;
 using Evania.Services;
 using Colors = Microsoft.UI.Colors;
@@ -137,6 +139,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         InitializeInput();
         InitializeTableToolbar();
         InitializeImageTooltip();
+        InitializeSpelling();
 
         MarkdownEditorLog.Write("control constructed");
     }
@@ -177,6 +180,22 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         get => (string)GetValue(SearchQueryProperty);
         set => SetValue(SearchQueryProperty, value);
     }
+
+    public static readonly DependencyProperty IsSpellCheckEnabledProperty = DependencyProperty.Register(
+        nameof(IsSpellCheckEnabled),
+        typeof(bool),
+        typeof(MarkdownEditor),
+        new PropertyMetadata(true, OnSpellCheckPropertyChanged));
+
+    /// <summary>Draws a red squiggle under words the Windows spell checker does not know.</summary>
+    public bool IsSpellCheckEnabled
+    {
+        get => (bool)GetValue(IsSpellCheckEnabledProperty);
+        set => SetValue(IsSpellCheckEnabledProperty, value);
+    }
+
+    private static void OnSpellCheckPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        => ((MarkdownEditor)d).canvas.Invalidate();
 
     public static readonly DependencyProperty IsReadOnlyProperty = DependencyProperty.Register(
         nameof(IsReadOnly),
@@ -521,6 +540,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             BlockRenderers.DrawInlineBackgrounds(session, theme, block);
             DrawSearchHighlights(session, block);
             DrawBlockText(session, block);
+            DrawSpellUnderlines(session, block);
         }
 
         DrawCaret(session);
@@ -904,6 +924,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         ClearImageCache();
         engine.Dispose();
         DisposeTextInput();
+        DisposeSpelling();
         // Win2D controls hold a swap chain; it must be detached explicitly or the GPU resources stay
         // alive after the control goes away.
         canvas.RemoveFromVisualTree();
@@ -921,4 +942,29 @@ public sealed class LinkRenamedEventArgs : EventArgs
     public string Target { get; }
 
     public string NewLabel { get; }
+}
+
+/// <summary>
+/// Clipboard content handed to <see cref="MarkdownEditor.ClipboardPasteHandler"/>: either a bitmap
+/// pasted straight from the clipboard (a screenshot or "copy image") or files copied in the shell.
+/// Exactly one of the two is populated.
+/// </summary>
+public sealed class ClipboardPasteContent
+{
+    internal ClipboardPasteContent(byte[] imageBytes, string contentType)
+    {
+        ImageBytes = imageBytes;
+        ContentType = contentType;
+    }
+
+    internal ClipboardPasteContent(IReadOnlyList<StorageFile> files) => Files = files;
+
+    /// <summary>The pasted bitmap's raw bytes, or null when the paste carried files.</summary>
+    public byte[]? ImageBytes { get; }
+
+    /// <summary>MIME type of <see cref="ImageBytes"/> (usually image/png), empty for files.</summary>
+    public string ContentType { get; } = string.Empty;
+
+    /// <summary>Files copied in the shell, empty when the paste carried a bitmap.</summary>
+    public IReadOnlyList<StorageFile> Files { get; } = Array.Empty<StorageFile>();
 }

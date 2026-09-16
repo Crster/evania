@@ -640,7 +640,7 @@ public static class MarkdownParser
                     continue;
                 }
             }
-            else if (TryReadDelimited(text, i, "***", out int inner1Start, out int inner1End, out int end1))
+            else if (TryReadDelimited(text, i, "***", out int inner1Start, out int inner1End, out int end1, requireWordSeparators: true))
             {
                 FlushPlain(i);
                 AddDelimited(result, offset, text, i, inner1Start, inner1End, end1, InlineStyle.Bold | InlineStyle.Italic);
@@ -648,7 +648,7 @@ public static class MarkdownParser
                 plainStart = i;
                 continue;
             }
-            else if (TryReadDelimited(text, i, "**", out int inner2Start, out int inner2End, out int end2)
+            else if (TryReadDelimited(text, i, "**", out int inner2Start, out int inner2End, out int end2, requireWordSeparators: true)
                 || TryReadDelimited(text, i, "__", out inner2Start, out inner2End, out end2, requireWordSeparators: true))
             {
                 FlushPlain(i);
@@ -657,7 +657,7 @@ public static class MarkdownParser
                 plainStart = i;
                 continue;
             }
-            else if (TryReadDelimited(text, i, "~~", out int inner3Start, out int inner3End, out int end3))
+            else if (TryReadDelimited(text, i, "~~", out int inner3Start, out int inner3End, out int end3, requireWordSeparators: true))
             {
                 FlushPlain(i);
                 AddDelimited(result, offset, text, i, inner3Start, inner3End, end3, InlineStyle.Strikethrough);
@@ -665,7 +665,7 @@ public static class MarkdownParser
                 plainStart = i;
                 continue;
             }
-            else if (TryReadDelimited(text, i, "==", out int hlStart, out int hlEnd, out int hlStop))
+            else if (TryReadDelimited(text, i, "==", out int hlStart, out int hlEnd, out int hlStop, requireWordSeparators: true))
             {
                 FlushPlain(i);
                 AddDelimited(result, offset, text, i, hlStart, hlEnd, hlStop, InlineStyle.Highlight);
@@ -673,7 +673,7 @@ public static class MarkdownParser
                 plainStart = i;
                 continue;
             }
-            else if (TryReadDelimited(text, i, "*", out int inner4Start, out int inner4End, out int end4)
+            else if (TryReadDelimited(text, i, "*", out int inner4Start, out int inner4End, out int end4, requireWordSeparators: true)
                 || TryReadDelimited(text, i, "_", out inner4Start, out inner4End, out end4, requireWordSeparators: true))
             {
                 FlushPlain(i);
@@ -723,9 +723,10 @@ public static class MarkdownParser
     /// and the exclusive end of the whole construct.
     /// </summary>
     /// <remarks>
-    /// With <paramref name="requireWordSeparators"/> (underscore markers), the delimiter only counts
-    /// when a word separator - or the text's edge - sits before the opening pair and after the
-    /// closing one, so "part1_part2_part3" keeps its underscores instead of styling "part2".
+    /// With <paramref name="requireWordSeparators"/> (all emphasis-style markers), the delimiter only
+    /// counts when a word separator - or the text's edge - sits before the opening pair and after
+    /// the closing one, so "part1_part2_part3", "part1**part2**part3" and "part1==part2==part3" keep
+    /// their markers instead of styling the middle.
     /// </remarks>
     private static bool TryReadDelimited(
         string text,
@@ -764,8 +765,8 @@ public static class MarkdownParser
         end = close + delimiter.Length;
 
         if (requireWordSeparators
-            && (index > 0 && IsWordCharacter(text[index - 1])
-                || end < text.Length && IsWordCharacter(text[end])))
+            && (index > 0 && IsWordCharacter(text[index - 1], delimiter[0])
+                || end < text.Length && IsWordCharacter(text[end], delimiter[0])))
         {
             return false;
         }
@@ -773,7 +774,12 @@ public static class MarkdownParser
         return true;
     }
 
-    private static bool IsWordCharacter(char c) => char.IsLetterOrDigit(c) || c == '_';
+    /// <summary>
+    /// A character that makes a delimiter run intraword: letters, digits, underscores, and the
+    /// delimiter's own character. Counting the marker itself is what stops a rejected
+    /// "part1**part2**part3" from being re-matched as single-star italic from its second asterisk.
+    /// </summary>
+    private static bool IsWordCharacter(char c, char marker) => char.IsLetterOrDigit(c) || c == '_' || c == marker;
 
     private static bool TryReadLink(
         string text,

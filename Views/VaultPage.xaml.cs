@@ -15,28 +15,32 @@ using ZXing.Common;
 
 namespace Evania.Views;
 
-public sealed partial class PasswordPage : Page
+public sealed partial class VaultPage : Page
 {
     /// <summary>
-    /// TOTP codes tick once a second while the page is alive; the view model derives each visible
+    /// OTP codes tick once a second while the page is alive; the view model derives each visible
     /// code on demand, so the timer carries no secrets of its own.
     /// </summary>
     private DispatcherTimer? totpTimer;
 
     /// <summary>Starts masked, and re-masked every time the editor opens so a previous session's
-    /// reveal choice never leaks into a different entry.</summary>
+    /// reveal choice never leaks into a different account.</summary>
     private bool passwordMasked = true;
 
-    public PasswordPageViewModel ViewModel { get; } = new();
+    public VaultPageViewModel ViewModel { get; } = new();
 
-    public PasswordPage()
+    public VaultPage()
     {
         InitializeComponent();
+
+        GroupedEntriesSource.Source = ViewModel.Groups;
+        EntryList.ItemsSource = GroupedEntriesSource.View;
+
         DataContext = ViewModel;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
     }
 
-    private async void PasswordPage_Loaded(object sender, RoutedEventArgs e)
+    private async void VaultPage_Loaded(object sender, RoutedEventArgs e)
     {
         await ViewModel.LoadAsync();
         UpdatePanels();
@@ -57,7 +61,7 @@ public sealed partial class PasswordPage : Page
         totpTimer.Start();
     }
 
-    private void PasswordPage_Unloaded(object sender, RoutedEventArgs e)
+    private void VaultPage_Unloaded(object sender, RoutedEventArgs e)
     {
         if (App.MainWindow is Evania.Windows.MainWindow mainWindow)
         {
@@ -78,10 +82,10 @@ public sealed partial class PasswordPage : Page
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PasswordPageViewModel.IsEditing))
+        if (e.PropertyName == nameof(VaultPageViewModel.IsEditing))
         {
             // New and Open both raise IsEditing just after filling the edit fields, so the mask
-            // reset always reflects the entry being shown, never the previous one.
+            // reset always reflects the account being shown, never the previous one.
             if (ViewModel.IsEditing)
             {
                 passwordMasked = true;
@@ -90,9 +94,16 @@ public sealed partial class PasswordPage : Page
 
             UpdatePanels();
         }
-        else if (e.PropertyName == nameof(PasswordPageViewModel.EditPassword) && passwordMasked)
+        else if (e.PropertyName == nameof(VaultPageViewModel.EditPassword) && passwordMasked)
         {
             PasswordInputMasked.Text = Mask(ViewModel.EditPassword);
+        }
+        else if (e.PropertyName == nameof(VaultPageViewModel.Groups))
+        {
+            // Re-assign the view as well: the source swap must reach the ListView, which holds the
+            // view object it was given.
+            GroupedEntriesSource.Source = ViewModel.Groups;
+            EntryList.ItemsSource = GroupedEntriesSource.View;
         }
     }
 
@@ -110,9 +121,20 @@ public sealed partial class PasswordPage : Page
         UpdatePanels();
     }
 
+    private void AddToSite_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not VaultSiteGroup group)
+        {
+            return;
+        }
+
+        ViewModel.NewEntry(group.DisplayName);
+        UpdatePanels();
+    }
+
     private async void EntryList_ItemClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is PasswordListItem item)
+        if (e.ClickedItem is VaultListItem item)
         {
             await ViewModel.OpenEntryAsync(item);
             UpdatePanels();
@@ -133,8 +155,8 @@ public sealed partial class PasswordPage : Page
         if (!ViewModel.HasError)
         {
             ViewModel.StatusMessage = skipped > 0
-                ? $"Imported {imported} passwords from {file.Name}; skipped {skipped} already in the database."
-                : $"Imported {imported} passwords from {file.Name}.";
+                ? $"Imported {imported} accounts from {file.Name}; skipped {skipped} already in the vault."
+                : $"Imported {imported} accounts from {file.Name}.";
         }
     }
 
@@ -153,7 +175,7 @@ public sealed partial class PasswordPage : Page
 
         FileSavePicker picker = new();
         picker.FileTypeChoices.Add("CSV file", new[] { ".csv" });
-        picker.SuggestedFileName = "evania-passwords";
+        picker.SuggestedFileName = "evania-vault";
 
         WinRT.Interop.InitializeWithWindow.Initialize(
             picker,
@@ -166,16 +188,31 @@ public sealed partial class PasswordPage : Page
         }
 
         await FileIO.WriteTextAsync(chosen, csv);
-        ViewModel.StatusMessage = $"Exported all passwords to {chosen.Name}.";
+        ViewModel.StatusMessage = $"Exported the vault to {chosen.Name}.";
     }
-
-    private async void Generator_Click(object sender, RoutedEventArgs e) =>
-        await ShowGeneratorDialogAsync(fillEditor: false);
 
     // --- editor ----------------------------------------------------------------------------------
 
-    private void Back_Click(object sender, RoutedEventArgs e)
+    private async void Back_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewModel.IsDirty)
+        {
+            ContentDialog dialog = new()
+            {
+                XamlRoot = XamlRoot,
+                Title = "Discard changes?",
+                Content = "This account has unsaved changes.",
+                PrimaryButtonText = "Discard",
+                CloseButtonText = "Keep editing",
+                DefaultButton = ContentDialogButton.Close,
+            };
+
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+        }
+
         ViewModel.CloseEditor();
         UpdatePanels();
     }
@@ -188,8 +225,7 @@ public sealed partial class PasswordPage : Page
 
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {
-        LiteDB.ObjectId? id = ViewModel.CurrentEntryId;
-        if (id is null)
+        if (!ViewModel.IsExistingEntry)
         {
             return;
         }
@@ -197,8 +233,8 @@ public sealed partial class PasswordPage : Page
         ContentDialog dialog = new()
         {
             XamlRoot = XamlRoot,
-            Title = "Delete password?",
-            Content = "This will permanently remove this entry from the database.",
+            Title = "Delete account?",
+            Content = "This will permanently remove this account from the vault.",
             PrimaryButtonText = "Delete",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
@@ -209,7 +245,7 @@ public sealed partial class PasswordPage : Page
             return;
         }
 
-        await ViewModel.DeleteEntryAsync(id);
+        await ViewModel.DeleteAccountAsync();
         UpdatePanels();
     }
 
@@ -218,6 +254,9 @@ public sealed partial class PasswordPage : Page
 
     private void EditorCopyPassword_Click(object sender, RoutedEventArgs e) =>
         CopyToClipboard(ViewModel.EditPassword);
+
+    private void EditorCopySecret_Click(object sender, RoutedEventArgs e) =>
+        CopyToClipboard(ViewModel.EditSecret);
 
     private void TogglePassword_Click(object sender, RoutedEventArgs e)
     {
@@ -319,10 +358,6 @@ public sealed partial class PasswordPage : Page
                     DispatcherQueue.TryEnqueue(() => status.Text = "Camera ready. Looking for a QR code...");
                 }
 
-                if (attempt == 1 || attempt % 30 == 0)
-                {
-                }
-
                 Result? result = reader.Decode(new RGBLuminanceSource(
                     pixels,
                     width,
@@ -391,35 +426,37 @@ public sealed partial class PasswordPage : Page
 
     private async void CopyUsername_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not PasswordListItem item)
+        if ((sender as FrameworkElement)?.Tag is not VaultListItem item)
         {
             return;
         }
 
-        PasswordDocument? entry = await PasswordService.GetAsync(item.Id);
-        if (entry is not null)
+        (VaultSite Site, VaultAccount Account)? loaded =
+            await VaultService.GetAccountAsync(item.SiteId, item.AccountId);
+        if (loaded is not null)
         {
-            CopyToClipboard(entry.Username);
+            CopyToClipboard(loaded.Value.Account.Username);
         }
     }
 
     private async void CopyPassword_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not PasswordListItem item)
+        if ((sender as FrameworkElement)?.Tag is not VaultListItem item)
         {
             return;
         }
 
-        PasswordDocument? entry = await PasswordService.GetAsync(item.Id);
-        if (entry is not null)
+        (VaultSite Site, VaultAccount Account)? loaded =
+            await VaultService.GetAccountAsync(item.SiteId, item.AccountId);
+        if (loaded is not null)
         {
-            CopyToClipboard(entry.Password);
+            CopyToClipboard(loaded.Value.Account.Password);
         }
     }
 
     private void CopyTotp_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is PasswordListItem item)
+        if ((sender as FrameworkElement)?.Tag is VaultListItem item)
         {
             CopyToClipboard(item.TotpCode);
         }

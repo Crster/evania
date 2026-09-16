@@ -31,6 +31,7 @@ public sealed partial class MainWindow : Window
 
     private readonly Dictionary<string, BookmarkPage> _bookmarkPages = new();
     private ChatPage? _chatPage;
+    private VaultPage? _vaultPage;
 
     public MainWindow()
     {
@@ -181,7 +182,7 @@ public sealed partial class MainWindow : Window
             nameof(ScreenshotPage) => typeof(ScreenshotPage),
             nameof(ScreenRecordPage) => typeof(ScreenRecordPage),
             nameof(NotePage) => typeof(NotePage),
-            nameof(PasswordPage) => typeof(PasswordPage),
+            nameof(VaultPage) => typeof(VaultPage),
             _ => null
         };
 
@@ -192,7 +193,7 @@ public sealed partial class MainWindow : Window
                 "Screenshot" => "Search screenshots",
                 "Screen Record" => "Search recordings",
                 "Notes" => "Search notes",
-                "Passwords" => "Search passwords",
+                "Vault" => "Search vault",
                 _ => "Search"
             };
             Navigate(pageType);
@@ -244,6 +245,13 @@ public sealed partial class MainWindow : Window
                 }
 
                 NavigationPresenter.Content = _chatPage;
+            }
+            else if (pageType == typeof(VaultPage))
+            {
+                // Cached so the vault survives leaving the page: whatever was open in the editor,
+                // or filtered in search, is still there when the user comes back.
+                _vaultPage ??= new VaultPage();
+                NavigationPresenter.Content = _vaultPage;
             }
             else
             {

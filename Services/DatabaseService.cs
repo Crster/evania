@@ -227,6 +227,18 @@ public static class DatabaseService
                 openedPath = path;
                 openedPassword = password;
 
+                // The vault rework replaced the flat "passwords" collection with the "vault"
+                // aggregate, and its rows intentionally do not carry over. Drop the predecessor on
+                // every open so the file does not carry dead data; quiet on failure, since the drop
+                // must never block the open itself.
+                try
+                {
+                    engine.DropCollection("passwords");
+                }
+                catch (Exception)
+                {
+                }
+
                 Status = new DatabaseStatus(true, !string.IsNullOrEmpty(password), null, SizeOf(path));
             }
             catch (Exception ex)
@@ -420,47 +432,47 @@ public static class DatabaseService
         }
     }
 
-    public static IReadOnlyList<PasswordDocument> GetPasswords()
+    public static IReadOnlyList<VaultSite> GetVaultSites()
     {
         lock (Gate)
         {
             LiteDatabase database = RequireEngine();
-            ILiteCollection<PasswordDocument> passwords = database.GetCollection<PasswordDocument>("passwords");
-            passwords.EnsureIndex(entry => entry.UpdatedAt);
+            ILiteCollection<VaultSite> vault = database.GetCollection<VaultSite>("vault");
+            vault.EnsureIndex(site => site.Site);
 
-            return passwords.FindAll().ToList();
+            return vault.FindAll().ToList();
         }
     }
 
-    public static PasswordDocument? GetPassword(ObjectId id)
+    public static VaultSite? GetVaultSite(ObjectId id)
     {
         lock (Gate)
         {
-            return RequireEngine().GetCollection<PasswordDocument>("passwords").FindById(id);
+            return RequireEngine().GetCollection<VaultSite>("vault").FindById(id);
         }
     }
 
-    public static void UpsertPassword(PasswordDocument entry)
+    public static void UpsertVaultSite(VaultSite site)
     {
         lock (Gate)
         {
-            RequireEngine().GetCollection<PasswordDocument>("passwords").Upsert(entry);
+            RequireEngine().GetCollection<VaultSite>("vault").Upsert(site);
         }
     }
 
-    public static void UpsertPasswords(IReadOnlyList<PasswordDocument> entries)
+    public static void UpsertVaultSites(IReadOnlyList<VaultSite> sites)
     {
         lock (Gate)
         {
-            RequireEngine().GetCollection<PasswordDocument>("passwords").Upsert(entries);
+            RequireEngine().GetCollection<VaultSite>("vault").Upsert(sites);
         }
     }
 
-    public static bool DeletePassword(ObjectId id)
+    public static bool DeleteVaultSite(ObjectId id)
     {
         lock (Gate)
         {
-            return RequireEngine().GetCollection<PasswordDocument>("passwords").Delete(id);
+            return RequireEngine().GetCollection<VaultSite>("vault").Delete(id);
         }
     }
 

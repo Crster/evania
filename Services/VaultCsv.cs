@@ -6,21 +6,25 @@ using Evania.Models;
 
 namespace Evania.Services;
 
+/// <summary>One parsed CSV row: the site the account belongs to, and the account itself.</summary>
+public sealed record VaultCsvRow(string Site, VaultAccount Account);
+
 /// <summary>
-/// CSV portability for passwords. Import auto-detects the browser export format by its header row -
-/// Chrome/Edge (<c>name,url,username,password</c>) and Firefox (<c>url,username,password,...)</c>
+/// CSV portability for the vault. Import auto-detects the browser export format by its header row -
+/// Chrome/Edge (<c>name,url,username,password</c>) and Firefox (<c>url,username,password,...</c>)
 /// both carry the fields Evania needs. Export writes the Chrome-compatible form, which most other
-/// managers accept too.
+/// managers accept too. Vault-only fields (email, OTP, secret, note) have no browser equivalent on
+/// import or export, so a round trip carries the credentials only.
 /// </summary>
-public static class PasswordCsv
+public static class VaultCsv
 {
     public static string ExportHeader => "name,url,username,password";
 
     /// <summary>
-    /// Parses a browser CSV export into password documents. Throws <see cref="FormatException"/>
-    /// with a user-presentable message when the file is not a recognized export.
+    /// Parses a browser CSV export into rows. Throws <see cref="FormatException"/> with a
+    /// user-presentable message when the file is not a recognized export.
     /// </summary>
-    public static IReadOnlyList<PasswordDocument> FromBrowserExport(string csvText)
+    public static IReadOnlyList<VaultCsvRow> FromBrowserExport(string csvText)
     {
         IReadOnlyList<string[]> rows = Parse(csvText);
 
@@ -42,7 +46,7 @@ public static class PasswordCsv
                 "Unrecognized CSV format. Expected a browser password export (Chrome, Edge, or Firefox) with url/username/password columns.");
         }
 
-        List<PasswordDocument> entries = new();
+        List<VaultCsvRow> entries = new();
 
         foreach (string[] row in rows.Skip(1))
         {
@@ -63,12 +67,13 @@ public static class PasswordCsv
                 continue;
             }
 
-            entries.Add(new PasswordDocument
-            {
-                Site = site,
-                Username = username,
-                Password = password,
-            });
+            entries.Add(new VaultCsvRow(
+                site,
+                new VaultAccount
+                {
+                    Username = username,
+                    Password = password,
+                }));
         }
 
         if (entries.Count == 0)
@@ -79,22 +84,22 @@ public static class PasswordCsv
         return entries;
     }
 
-    /// <summary>Builds a Chrome-compatible CSV document from the given entries.</summary>
-    public static string ToBrowserCsv(IReadOnlyList<PasswordDocument> entries)
+    /// <summary>Builds a Chrome-compatible CSV document from the given rows.</summary>
+    public static string ToBrowserCsv(IEnumerable<VaultCsvRow> rows)
     {
         StringBuilder builder = new();
         builder.Append(ExportHeader).Append("\r\n");
 
-        foreach (PasswordDocument entry in entries)
+        foreach (VaultCsvRow row in rows)
         {
-            string site = entry.Site.Trim();
+            string site = row.Site.Trim();
             bool looksLikeUrl = site.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                                 site.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
             builder.Append(EscapeField(site)).Append(',');
             builder.Append(EscapeField(looksLikeUrl ? site : string.Empty)).Append(',');
-            builder.Append(EscapeField(entry.Username)).Append(',');
-            builder.Append(EscapeField(entry.Password)).Append('\r');
+            builder.Append(EscapeField(row.Account.Username)).Append(',');
+            builder.Append(EscapeField(row.Account.Password)).Append('\r');
             builder.Append('\n');
         }
 
@@ -211,12 +216,8 @@ public static class PasswordCsv
     private static string Cell(string[] row, int index) =>
         index >= 0 && index < row.Length ? row[index] : string.Empty;
 
-    private static string EscapeField(string value)
-    {
-        bool needsQuotes = value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) >= 0;
-
-        return needsQuotes
+    private static string EscapeField(string value) =>
+        value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) >= 0
             ? $"\"{value.Replace("\"", "\"\"")}\""
             : value;
-    }
 }

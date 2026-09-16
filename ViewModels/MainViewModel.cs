@@ -72,8 +72,8 @@ namespace Evania.ViewModels
             },
             new NavigationItemViewModel
             {
-                Content = "Passwords",
-                Tag = nameof(Views.PasswordPage),
+                Content = "Vault",
+                Tag = nameof(Views.VaultPage),
                 Icon = CreateGlyphIcon("\uE72E")
             }
         ];

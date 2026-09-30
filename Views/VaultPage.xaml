@@ -253,7 +253,18 @@
                                             Text="{x:Bind DisplayName}"
                                             FontSize="15"
                                             FontWeight="SemiBold"
-                                            TextTrimming="CharacterEllipsis" />
+                                            TextTrimming="CharacterEllipsis"
+                                            Visibility="{x:Bind IsUrl, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                            <HyperlinkButton
+                                            Content="{x:Bind DisplayName}"
+                                            Tag="{Binding}"
+                                            Click="OpenSite_Click"
+                                            Padding="0"
+                                            HorizontalAlignment="Left"
+                                            FontSize="15"
+                                            FontWeight="SemiBold"
+                                            ToolTipService.ToolTip="Open in browser"
+                                            Visibility="{x:Bind IsUrl, Converter={StaticResource BoolToVisibilityConverter}}" />
                                             <TextBlock Text="{x:Bind AccountCountText}" FontSize="11" Opacity="0.6" />
                                         </StackPanel>
                                         <Button

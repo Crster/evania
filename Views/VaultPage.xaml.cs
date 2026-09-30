@@ -163,6 +163,16 @@ public sealed partial class VaultPage : Page
         UpdatePanels();
     }
 
+    private async void OpenSite_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not VaultSiteGroup { IsUrl: true } group)
+        {
+            return;
+        }
+
+        await global::Windows.System.Launcher.LaunchUriAsync(new Uri(group.Name));
+    }
+
     private async void EntryList_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is VaultListItem item)

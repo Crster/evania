@@ -186,7 +186,10 @@ internal sealed class TextRegion
     {
         if (Segments.Count == 0)
         {
-            return DocumentStart;
+            // Nothing rendered means the whole block is hidden syntax (an empty list item, or an
+            // inactive heading/quote with no body): the only sensible caret position is past the
+            // marker, not in front of it, or a click here would insert typed text before the "- ".
+            return DocumentEnd;
         }
 
         foreach (LayoutSegment segment in Segments)

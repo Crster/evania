@@ -175,6 +175,10 @@ public sealed class VaultSiteGroup : IEnumerable<VaultListItem>
 
     public string Initial => string.IsNullOrWhiteSpace(Name) ? "?" : Name.Trim()[..1].ToUpperInvariant();
 
+    /// <summary>True when the site name is itself a web address, so the header can offer it as a link.</summary>
+    public bool IsUrl => Uri.TryCreate(Name, UriKind.Absolute, out Uri? uri)
+        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
     public string AccountCountText => AccountCount == 1 ? "1 account" : $"{AccountCount} accounts";
 
     public IEnumerator<VaultListItem> GetEnumerator() => Accounts.GetEnumerator();

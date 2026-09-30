@@ -1,8 +1,0 @@
-{
-  "commands": [
-    {
-      "name": "Run Project",
-      "command": "powershell -ExecutionPolicy Bypass -File run-app.ps1"
-    }
-  ]
-}

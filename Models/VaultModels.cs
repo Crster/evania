@@ -173,7 +173,26 @@ public sealed class VaultSiteGroup : IEnumerable<VaultListItem>
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? "Unnamed" : Name;
 
-    public string Initial => string.IsNullOrWhiteSpace(Name) ? "?" : Name.Trim()[..1].ToUpperInvariant();
+    public string Initial
+    {
+        get
+        {
+            string text = Name?.Trim() ?? string.Empty;
+            int scheme = text.IndexOf("://", StringComparison.Ordinal);
+            if (scheme >= 0)
+            {
+                text = text[(scheme + 3)..];
+            }
+
+            if (text.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text[4..];
+            }
+
+            text = text.TrimStart('/', '.', ' ');
+            return text.Length == 0 ? "?" : text[..1].ToUpperInvariant();
+        }
+    }
 
     /// <summary>True when the site name is itself a web address, so the header can offer it as a link.</summary>
     public bool IsUrl => Uri.TryCreate(Name, UriKind.Absolute, out Uri? uri)

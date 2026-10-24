@@ -133,7 +133,6 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            MarkdownEditorLog.Viewport($"loaded note={currentNote.Id}, offset={currentNote.EditorScrollOffset:F1}, height={currentNote.EditorViewportHeight:F1}, source={currentNote.EditorViewportSourcePosition}, anchorOffset={currentNote.EditorViewportAnchorOffset:F1}");
 
             Title = currentNote.Title;
             Attachments.Clear();
@@ -233,9 +232,7 @@ public partial class NotePageViewModel : ObservableObject, IDisposable
         UpdateEditorViewport(viewport);
         if (currentNote is not null)
         {
-            MarkdownEditorLog.Viewport($"saving note={currentNote.Id}, offset={viewport.ScrollOffset:F1}, height={viewport.Height:F1}, source={viewport.SourcePosition}, anchorOffset={viewport.AnchorOffset:F1}");
             await NoteService.SaveViewportAsync(currentNote);
-            MarkdownEditorLog.Viewport($"save completed note={currentNote.Id}");
         }
     }
 

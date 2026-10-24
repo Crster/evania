@@ -121,7 +121,6 @@ public sealed partial class MarkdownEditor
         ToolTipService.SetToolTip(button, tooltip);
         button.Click += (_, _) =>
         {
-            MarkdownEditorLog.Write($"toolbar invoked {label}");
             action();
         };
 

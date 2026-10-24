@@ -20,3 +20,7 @@ BundleArtifacts/
 *.log
 crster/
 .crster/
+
+# Signing keys
+*.pfx
+*.cer

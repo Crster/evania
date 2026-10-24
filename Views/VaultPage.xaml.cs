@@ -573,6 +573,47 @@ public sealed partial class VaultPage : Page
         }
     }
 
+    private async void ShareQr_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not VaultListItem item)
+        {
+            return;
+        }
+
+        (VaultSite Site, VaultAccount Account)? loaded =
+            await VaultService.GetAccountAsync(item.SiteId, item.AccountId);
+        if (loaded is null)
+        {
+            return;
+        }
+
+        VaultAccount account = loaded.Value.Account;
+        StackPanel content = new() { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center };
+        content.Children.Add(new Image
+        {
+            Source = QrService.Render($"Username: {account.Username}\nPassword: {account.Password}", 320),
+            Width = 280,
+            Height = 280,
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "Scan with your phone. Anyone who sees this code can read the login.",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.7,
+            MaxWidth = 280,
+        });
+
+        ContentDialog dialog = new()
+        {
+            XamlRoot = XamlRoot,
+            Title = "Share to phone",
+            Content = content,
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        await dialog.ShowAsync();
+    }
+
     private void CopyTotp_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is VaultListItem item)
@@ -772,6 +813,25 @@ public sealed partial class VaultPage : Page
 
         DataPackage package = new();
         package.SetText(text);
-        Clipboard.SetContent(package);
+        Clipboard.SetContentWithOptions(package, new ClipboardContentOptions { IsAllowedInHistory = false, IsRoamable = false });
+        _ = ClearClipboardLaterAsync(text);
+    }
+
+    private static async Task ClearClipboardLaterAsync(string copied)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            DataPackageView view = Clipboard.GetContent();
+
+            if (view.Contains(StandardDataFormats.Text) && await view.GetTextAsync() == copied)
+            {
+                Clipboard.Clear();
+            }
+        }
+        catch (Exception)
+        {
+        }
     }
 }

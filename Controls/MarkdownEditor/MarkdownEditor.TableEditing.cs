@@ -76,7 +76,6 @@ public sealed partial class MarkdownEditor
     {
         if (!TryGetCaretGridCell(out _, out _, out _))
         {
-            MarkdownEditorLog.Exit("caret is not in a rendered table");
             return;
         }
 
@@ -97,7 +96,6 @@ public sealed partial class MarkdownEditor
     {
         if (!TryGetCaretGridCell(out BlockLayout block, out int row, out int column))
         {
-            MarkdownEditorLog.Exit("caret is not in a rendered table");
             return;
         }
 
@@ -113,7 +111,6 @@ public sealed partial class MarkdownEditor
         int lineIndex = row == 0 ? 0 : row + 1;
         if (row == 0 || lineIndex >= lines.Count)
         {
-            MarkdownEditorLog.Exit("the header row cannot be deleted");
             return;
         }
 
@@ -126,7 +123,6 @@ public sealed partial class MarkdownEditor
     {
         if (!TryGetCaretGridCell(out BlockLayout block, out int row, out int column))
         {
-            MarkdownEditorLog.Exit("caret is not in a rendered table");
             return;
         }
 
@@ -163,7 +159,6 @@ public sealed partial class MarkdownEditor
     {
         if (!TryGetCaretGridCell(out BlockLayout block, out int row, out int column))
         {
-            MarkdownEditorLog.Exit("caret is not in a rendered table");
             return;
         }
 
@@ -175,7 +170,6 @@ public sealed partial class MarkdownEditor
         List<string> lines = GetTableLines(block.Block);
         if (CountColumns(lines) <= 1)
         {
-            MarkdownEditorLog.Exit("a table needs at least one column");
             return;
         }
 
@@ -207,7 +201,6 @@ public sealed partial class MarkdownEditor
     private void RewriteTable(BlockLayout block, string newText, int row, int column)
     {
         int start = block.Block.Start;
-        MarkdownEditorLog.Write($"rewriting table at {start} as {MarkdownEditorLog.Snippet(newText, 80)}");
 
         document.Replace(start, block.Block.End - start, newText, MarkdownEditKind.Structural, selection);
         PlaceCaretInCell(start, newText, row, column);

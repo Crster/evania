@@ -44,7 +44,6 @@ public sealed partial class MarkdownEditor
         {
             // Desktop WinUI has no CoreWindow, so this can fail outright on some configurations.
             // Typing still works through CharacterReceived; only IME composition is lost.
-            MarkdownEditorLog.Error(ex);
             return;
         }
 
@@ -61,7 +60,6 @@ public sealed partial class MarkdownEditor
         editContext.CompositionCompleted += OnCompositionCompleted;
         editContext.FocusRemoved += OnFocusRemoved;
 
-        MarkdownEditorLog.Write("CoreTextEditContext created and hooked");
     }
 
     private void DisposeTextInput()
@@ -85,7 +83,6 @@ public sealed partial class MarkdownEditor
 
     private void OnEditorGotFocus(object sender, RoutedEventArgs e)
     {
-        MarkdownEditorLog.Write($"got focus, editContext={(editContext is null ? "null" : "live")}");
         hasFocus = true;
         editContext?.NotifyFocusEnter();
         RestartCaretBlink();
@@ -94,7 +91,6 @@ public sealed partial class MarkdownEditor
 
     private void OnEditorLostFocus(object sender, RoutedEventArgs e)
     {
-        MarkdownEditorLog.Write("lost focus");
         hasFocus = false;
         document.CloseUndoUnit();
         editContext?.NotifyFocusLeave();
@@ -104,7 +100,6 @@ public sealed partial class MarkdownEditor
 
     private void OnFocusRemoved(CoreTextEditContext sender, object args)
     {
-        MarkdownEditorLog.Write("focus removed by the OS text stack");
         hasFocus = false;
         RestartCaretBlink();
         InvalidateCaret();
@@ -117,12 +112,10 @@ public sealed partial class MarkdownEditor
         CoreTextTextRequest request = args.Request;
         CoreTextRange range = ClampToDocument(request.Range);
         request.Text = document.GetText(range.StartCaretPosition, range.EndCaretPosition - range.StartCaretPosition);
-        MarkdownEditorLog.Write($"OS requested text {range.StartCaretPosition}..{range.EndCaretPosition} -> {MarkdownEditorLog.Snippet(request.Text)}");
     }
 
     private void OnSelectionRequested(CoreTextEditContext sender, CoreTextSelectionRequestedEventArgs args)
     {
-        MarkdownEditorLog.Write($"OS requested selection -> {selection.Min}..{selection.Max}");
         args.Request.Selection = new CoreTextRange
         {
             StartCaretPosition = selection.Min,
@@ -198,14 +191,12 @@ public sealed partial class MarkdownEditor
     {
         if (IsReadOnly)
         {
-            MarkdownEditorLog.Write("text update refused: editor is read-only");
             args.Result = CoreTextTextUpdatingResult.Failed;
             return;
         }
 
         CoreTextRange range = ClampToDocument(args.Range);
         string newText = MarkdownDocument.Normalize(args.Text ?? string.Empty);
-        MarkdownEditorLog.Write($"OS text update {args.Range.StartCaretPosition}..{args.Range.EndCaretPosition} (clamped {range.StartCaretPosition}..{range.EndCaretPosition}) text={MarkdownEditorLog.Snippet(newText)} docLength={document.Length}");
 
         applyingTextUpdate = true;
         try
@@ -240,7 +231,6 @@ public sealed partial class MarkdownEditor
             if (guard.Blocked)
             {
                 args.Result = CoreTextTextUpdatingResult.Failed;
-                MarkdownEditorLog.Write("text update refused: table structure cannot be edited here");
                 return;
             }
 
@@ -258,12 +248,10 @@ public sealed partial class MarkdownEditor
             SetSelection(resolved);
             AutoContinueList(start, replacement);
             args.Result = CoreTextTextUpdatingResult.Succeeded;
-            MarkdownEditorLog.Write($"text update applied, caret={selection.End} docLength={document.Length}");
         }
         catch (Exception ex)
         {
             args.Result = CoreTextTextUpdatingResult.Failed;
-            MarkdownEditorLog.Error(ex);
         }
         finally
         {
@@ -274,7 +262,6 @@ public sealed partial class MarkdownEditor
     private void OnSelectionUpdating(CoreTextEditContext sender, CoreTextSelectionUpdatingEventArgs args)
     {
         CoreTextRange range = ClampToDocument(args.Selection);
-        MarkdownEditorLog.Write($"OS selection update -> {range.StartCaretPosition}..{range.EndCaretPosition}");
         SetSelection(new TextRange(range.StartCaretPosition, range.EndCaretPosition));
         args.Result = CoreTextSelectionUpdatingResult.Succeeded;
     }
@@ -289,13 +276,11 @@ public sealed partial class MarkdownEditor
 
     private void OnCompositionStarted(CoreTextEditContext sender, CoreTextCompositionStartedEventArgs args)
     {
-        MarkdownEditorLog.Write("IME composition started");
         document.CloseUndoUnit();
     }
 
     private void OnCompositionCompleted(CoreTextEditContext sender, CoreTextCompositionCompletedEventArgs args)
     {
-        MarkdownEditorLog.Write($"IME composition completed, docLength={document.Length}");
         document.CloseUndoUnit();
     }
 
@@ -309,11 +294,9 @@ public sealed partial class MarkdownEditor
     {
         if (applyingTextUpdate || editContext is null)
         {
-            MarkdownEditorLog.Exit(applyingTextUpdate ? "OS update in flight" : "no edit context");
             return;
         }
 
-        MarkdownEditorLog.Write($"notifying OS of app edit, docLength={document.Length} selection={selection.Min}..{selection.Max}");
         editContext.NotifyTextChanged(
             new CoreTextRange { StartCaretPosition = 0, EndCaretPosition = document.Length },
             document.Length,

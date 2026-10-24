@@ -100,6 +100,7 @@ public sealed partial class SettingsPage : Page
             ApplySearchHighlight(mainWindow.TitleBarSearchText);
         }
 
+        AboutVersionText.Text = $"Evania {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}";
         loaded = true;
     }
 
@@ -335,6 +336,55 @@ public sealed partial class SettingsPage : Page
         }
 
         return string.IsNullOrWhiteSpace(input.Password) ? null : input.Password;
+    }
+
+    private async void ClearBrowsingData_Click(object sender, RoutedEventArgs e)
+    {
+        ContentDialog confirm = new()
+        {
+            Title = "Clear browsing data?",
+            Content = "This signs you out of Chat and Web Bookmarks and removes their cookies, cache and history.",
+            PrimaryButtonText = "Clear",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        try
+        {
+            await ProfileWebView.EnsureCoreWebView2Async(await SettingsService.GetChatWebViewEnvironmentAsync());
+            await ProfileWebView.CoreWebView2.Profile.ClearBrowsingDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ErrorMessage = ex.Message;
+        }
+    }
+
+    private async void ShowLegal_Click(object sender, RoutedEventArgs e)
+    {
+        string file = (string)((FrameworkElement)sender).Tag;
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "Legal", file);
+        string text = File.Exists(path) ? await File.ReadAllTextAsync(path) : "This document is not available.";
+
+        ContentDialog dialog = new()
+        {
+            Title = ((Button)sender).Content,
+            Content = new ScrollViewer
+            {
+                MaxHeight = 420,
+                Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true }
+            },
+            CloseButtonText = "Close",
+            XamlRoot = XamlRoot
+        };
+
+        await dialog.ShowAsync();
     }
 
     private void ErrorBar_Closed(InfoBar sender, object args) => ViewModel.ErrorMessage = string.Empty;

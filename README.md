@@ -74,4 +74,4 @@ The script expects the signing certificate to be available in the current user s
 
 ## License
 
-No license file is included in this repository.
+Evania is released under the MIT License (see `LICENSE`). See also `PRIVACY.md`, `TERMS.md` and `THIRD-PARTY-NOTICES.md`.

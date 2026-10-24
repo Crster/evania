@@ -374,6 +374,13 @@
                                     ToolTipService.ToolTip="Copy password">
                                         <FontIcon Glyph="&#xE8C8;" FontSize="13" />
                                     </Button>
+                                    <Button
+                                    Style="{StaticResource ToolbarButtonStyle}"
+                                    Tag="{Binding}"
+                                    Click="ShareQr_Click"
+                                    ToolTipService.ToolTip="Show QR code for phone">
+                                        <FontIcon Glyph="&#xED14;" FontSize="13" />
+                                    </Button>
                                 </StackPanel>
                             </Grid>
                         </DataTemplate>
@@ -381,11 +388,10 @@
                 </ListView>
             </Grid>
 
-            <!-- Editor: column capped at 880 and left-aligned -->
+            <!-- Editor: fills the available width -->
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" MaxWidth="880" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <StackPanel
             x:Name="EditorPanel"

@@ -141,7 +141,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         InitializeImageTooltip();
         InitializeSpelling();
 
-        MarkdownEditorLog.Write("control constructed");
     }
 
     /// <summary>Raised after any edit, with the full markdown source.</summary>
@@ -240,13 +239,11 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             anchor?.Block.Start ?? -1,
             anchor is null ? 0 : anchor.Y - scroller.VerticalOffset,
             CaptureTopPosition(anchor, (float)scroller.VerticalOffset));
-        MarkdownEditorLog.Viewport($"captured {FormatViewport(viewport)}, extent={scroller.ExtentHeight:F1}, blocks={engine.Blocks.Count}, ready={canvas.ReadyToDraw}");
         return viewport;
     }
 
     public void RestoreViewport(MarkdownEditorViewport viewport)
     {
-        MarkdownEditorLog.Viewport($"restore requested {FormatViewport(viewport)}, extent={scroller.ExtentHeight:F1}, blocks={engine.Blocks.Count}, ready={canvas.ReadyToDraw}");
         pendingViewport = viewport;
         UpdateEditorLayout();
         TryRestorePendingViewport();
@@ -261,7 +258,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
         if (!canvas.ReadyToDraw)
         {
-            MarkdownEditorLog.Viewport($"restore waiting: pending={pendingViewport.HasValue}, ready={canvas.ReadyToDraw}, extent={scroller.ExtentHeight:F1}, blocks={engine.Blocks.Count}");
             return;
         }
 
@@ -270,7 +266,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             : engine.Blocks.FirstOrDefault(block => block.Contains(viewport.SourcePosition));
         if (viewport.SourcePosition >= 0 && anchor is null)
         {
-            MarkdownEditorLog.Viewport($"restore waiting for source={viewport.SourcePosition}, blocks={engine.Blocks.Count}");
             return;
         }
 
@@ -285,7 +280,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             pendingViewport = null;
         }
 
-        MarkdownEditorLog.Viewport($"restore applied target={target:F1}, accepted={accepted}, reached={reached}, actual={scroller.VerticalOffset:F1}, extent={scroller.ExtentHeight:F1}, anchorY={anchor?.Y:F1}");
     }
 
     /// <summary>
@@ -332,11 +326,9 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         string text = (string)(e.NewValue ?? string.Empty);
         if (text == editor.document.Text)
         {
-            MarkdownEditorLog.Write($"markdown property unchanged, length={text.Length}");
             return;
         }
 
-        MarkdownEditorLog.Write($"markdown property set, length={text.Length} {MarkdownEditorLog.Snippet(text)}");
         editor.document.SetText(text);
         editor.selection = TextRange.Caret(0);
         editor.engine.Invalidate();
@@ -350,7 +342,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        MarkdownEditorLog.Write($"loaded, readyToDraw={canvas.ReadyToDraw} size={ActualWidth:F0}x{ActualHeight:F0}");
         ApplyThemeColors();
         UpdateEditorLayout();
         canvas.Invalidate();
@@ -364,7 +355,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     /// </summary>
     private void OnCanvasCreateResources(CanvasVirtualControl sender, Microsoft.Graphics.Canvas.UI.CanvasCreateResourcesEventArgs args)
     {
-        MarkdownEditorLog.Write($"Win2D resources created ({args.Reason}), docLength={document.Length}");
 
         // The bitmaps were built on the device that just went away, so they have to be dropped and
         // reloaded against the new one.
@@ -376,13 +366,11 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        MarkdownEditorLog.Write("unloaded, caret blink stopped");
         caretTimer.Stop();
     }
 
     private void OnDocumentChanged(object? sender, MarkdownDocumentChangedEventArgs e)
     {
-        MarkdownEditorLog.Write($"document changed, docLength={document.Length} selection={selection.Start}..{selection.End}");
         UpdateEditorLayout();
 
         suppressTextPropertyChange = true;
@@ -403,7 +391,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     {
         if (e.NewSize.Width > 0)
         {
-            MarkdownEditorLog.Write($"canvas size changed to {e.NewSize.Width:F0}x{e.NewSize.Height:F0}");
             contentWidth = (float)e.NewSize.Width;
             engine.Invalidate();
             UpdateEditorLayout();
@@ -424,7 +411,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     {
         if (!canvas.ReadyToDraw)
         {
-            MarkdownEditorLog.Exit("canvas not ready to draw");
             return;
         }
 
@@ -449,7 +435,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
         if (rebuilt)
         {
-            MarkdownEditorLog.Write($"layout rebuilt, blocks={engine.Blocks.Count} totalHeight={engine.TotalHeight:F0} width={available:F0}");
             canvas.Invalidate();
         }
 
@@ -512,8 +497,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             {
                 // A throw here would tear down the app from a Win2D callback, and the region that
                 // caused it is the only useful clue.
-                MarkdownEditorLog.Write($"draw failed for region {region.X:F0},{region.Y:F0} {region.Width:F0}x{region.Height:F0} surface={canvas.Size.Width:F0}x{canvas.Size.Height:F0}");
-                MarkdownEditorLog.Error(ex);
             }
         }
     }
@@ -813,7 +796,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         }
 
         bool blockChanged = engine.FindBlockFor(selection.End)?.Block.Start != engine.FindBlockFor(range.End)?.Block.Start;
-        MarkdownEditorLog.Write($"selection {selection.Start}..{selection.End} -> {range.Start}..{range.End} blockChanged={blockChanged}");
         selection = range;
 
         // Raw table editing ends as soon as the caret leaves that table.
@@ -863,13 +845,11 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     {
         if (!canvas.ReadyToDraw)
         {
-            MarkdownEditorLog.Exit("canvas not ready to draw");
             return;
         }
 
         if (!TryGetCaretRect(out global::Windows.Foundation.Rect caretRect))
         {
-            MarkdownEditorLog.Exit($"no caret rect for offset {selection.End}");
             return;
         }
 
@@ -877,7 +857,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         double surfaceHeight = canvas.Size.Height;
         if (surfaceWidth <= 0 || surfaceHeight <= 0)
         {
-            MarkdownEditorLog.Exit($"empty surface {surfaceWidth:F0}x{surfaceHeight:F0}");
             return;
         }
 
@@ -888,7 +867,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
         if (right <= left || bottom <= top)
         {
-            MarkdownEditorLog.Exit($"caret {caretRect.X:F0},{caretRect.Y:F0} outside surface {surfaceWidth:F0}x{surfaceHeight:F0}");
             return;
         }
 
@@ -918,7 +896,6 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
 
     public void Dispose()
     {
-        MarkdownEditorLog.Write("disposing");
         disposed = true;
         caretTimer.Stop();
         ClearImageCache();

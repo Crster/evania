@@ -344,7 +344,7 @@ public sealed partial class MainWindow : Window
 
         TrayIconService.SetToolTipText(title.Length == 0
             ? "Evania"
-            : $"Evania - {title}");
+            : title);
     }
 
     private static class NativeMethods

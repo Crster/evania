@@ -52,11 +52,9 @@ public sealed partial class MarkdownEditor
     {
         if (IsReadOnly)
         {
-            MarkdownEditorLog.Exit("editor is read-only");
             return;
         }
 
-        MarkdownEditorLog.Write($"toggle wrap {MarkdownEditorLog.Snippet(delimiter)} over {selection.Min}..{selection.Max}");
 
         int min = selection.Min;
         int max = selection.Max;
@@ -780,7 +778,6 @@ public sealed partial class MarkdownEditor
             && document.Length > 0
             && !lastBlockSelection.IsEmpty)
         {
-            MarkdownEditorLog.Write($"select all: back to block {lastBlockSelection.Min}..{lastBlockSelection.Max}");
             SetSelection(lastBlockSelection);
             return;
         }
@@ -793,13 +790,11 @@ public sealed partial class MarkdownEditor
 
         if (block.IsEmpty || blockAlreadySelected)
         {
-            MarkdownEditorLog.Write($"select all: whole document 0..{document.Length}");
             lastBlockSelection = block;
             SetSelection(new TextRange(0, document.Length));
             return;
         }
 
-        MarkdownEditorLog.Write($"select all: block {block.Min}..{block.Max}");
         lastBlockSelection = block;
         SetSelection(new TextRange(block.Min, block.Max));
     }
@@ -837,13 +832,11 @@ public sealed partial class MarkdownEditor
     {
         if (document.Undo(out TextRange restored))
         {
-            MarkdownEditorLog.Write($"undo applied, caret restored to {restored.Start}..{restored.End}");
             engine.Invalidate();
             SetSelection(restored);
         }
         else
         {
-            MarkdownEditorLog.Exit("undo stack empty");
         }
     }
 
@@ -851,13 +844,11 @@ public sealed partial class MarkdownEditor
     {
         if (document.Redo(out TextRange restored))
         {
-            MarkdownEditorLog.Write($"redo applied, caret restored to {restored.Start}..{restored.End}");
             engine.Invalidate();
             SetSelection(restored);
         }
         else
         {
-            MarkdownEditorLog.Exit("redo stack empty");
         }
     }
 
@@ -867,13 +858,11 @@ public sealed partial class MarkdownEditor
     {
         if (selection.IsEmpty)
         {
-            MarkdownEditorLog.Exit("empty selection");
             return;
         }
 
         var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
         string copied = document.GetText(selection);
-        MarkdownEditorLog.Write($"copying {copied.Length} chars {MarkdownEditorLog.Snippet(copied)}");
         package.SetText(copied);
         Clipboard.SetContent(package);
         await Task.CompletedTask;
@@ -883,11 +872,9 @@ public sealed partial class MarkdownEditor
     {
         if (selection.IsEmpty || IsReadOnly)
         {
-            MarkdownEditorLog.Exit(IsReadOnly ? "editor is read-only" : "empty selection");
             return;
         }
 
-        MarkdownEditorLog.Write($"cutting {selection.Min}..{selection.Max}");
         await CopyAsync();
         DeleteSelectionPreservingTable();
     }
@@ -915,7 +902,6 @@ public sealed partial class MarkdownEditor
     {
         if (IsReadOnly)
         {
-            MarkdownEditorLog.Exit("editor is read-only");
             return;
         }
 
@@ -927,30 +913,25 @@ public sealed partial class MarkdownEditor
         DataPackageView view = Clipboard.GetContent();
         if (!view.Contains(StandardDataFormats.Text))
         {
-            MarkdownEditorLog.Exit("clipboard holds no text format");
             return;
         }
 
         string text = await view.GetTextAsync();
         if (string.IsNullOrEmpty(text))
         {
-            MarkdownEditorLog.Exit("clipboard text was empty");
             return;
         }
 
-        MarkdownEditorLog.Write($"pasting {text.Length} chars over {selection.Min}..{selection.Max} {MarkdownEditorLog.Snippet(text)}");
 
         string trimmed = text.Trim();
         if (IsAbsoluteUrl(trimmed))
         {
             if (!selection.IsEmpty)
             {
-                MarkdownEditorLog.Write("clipboard is a URL, wrapping selection as a link");
                 InsertLink(trimmed, document.GetText(selection));
                 return;
             }
 
-            MarkdownEditorLog.Write("clipboard is a bare URL, converting to formatted link");
             string title = await TryExtractTitleFromClipboardHtmlAsync(view, trimmed)
                 ?? await TryFetchWebPageTitleAsync(trimmed)
                 ?? trimmed;
@@ -959,7 +940,6 @@ public sealed partial class MarkdownEditor
             TableGuardResult linkGuard = GetTableGuard(selection, markdownLink);
             if (linkGuard.Blocked)
             {
-                MarkdownEditorLog.Exit("paste refused by table protection");
                 return;
             }
 
@@ -971,13 +951,11 @@ public sealed partial class MarkdownEditor
         TableGuardResult guard = GetTableGuard(selection, text);
         if (guard.Blocked)
         {
-            MarkdownEditorLog.Exit("paste refused by table protection");
             return;
         }
 
         if (guard.Replacement != text)
         {
-            MarkdownEditorLog.Write($"paste filtered by table protection to {MarkdownEditorLog.Snippet(guard.Replacement)}");
             text = guard.Replacement;
         }
 
@@ -1006,11 +984,9 @@ public sealed partial class MarkdownEditor
         string? markdown = await handler(content);
         if (string.IsNullOrEmpty(markdown))
         {
-            MarkdownEditorLog.Write("paste: clipboard held an attachment but the host returned no markdown");
             return false;
         }
 
-        MarkdownEditorLog.Write($"pasting clipboard attachment {MarkdownEditorLog.Snippet(markdown)}");
         InsertBlock(markdown);
         return true;
     }
@@ -1059,7 +1035,6 @@ public sealed partial class MarkdownEditor
         {
             // Some sources hand out formats that cannot be opened. That must never break pasting:
             // the plain-text path below still gets its chance.
-            MarkdownEditorLog.Write($"clipboard attachment capture failed: {ex.Message}");
         }
 
         return null;
@@ -1176,7 +1151,6 @@ public sealed partial class MarkdownEditor
         }
         catch (Exception ex)
         {
-            MarkdownEditorLog.Write($"failed to fetch html title for {MarkdownEditorLog.Snippet(url)}: {ex.Message}");
         }
 
         return null;

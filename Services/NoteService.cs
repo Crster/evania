@@ -54,7 +54,6 @@ public static class NoteService
         {
             DatabaseService.UpsertNote(note);
             NoteDocument? stored = DatabaseService.GetNote(note.Id);
-            MarkdownEditorLog.Viewport($"database note={note.Id}, offset={stored?.EditorScrollOffset:F1}, height={stored?.EditorViewportHeight:F1}, source={stored?.EditorViewportSourcePosition}, anchorOffset={stored?.EditorViewportAnchorOffset:F1}");
         });
 
     public static Task<NoteDocument?> GetAsync(ObjectId id) => Task.Run(() => Normalize(DatabaseService.GetNote(id)));

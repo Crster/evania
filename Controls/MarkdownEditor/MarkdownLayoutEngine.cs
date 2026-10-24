@@ -550,7 +550,6 @@ internal sealed class MarkdownLayoutEngine : IDisposable
             }
 
             y += layout.Height + BlockRenderers.GetSpacingAfter(theme, block);
-            MarkdownEditorLog.Write($"block {block.Kind} height={layout.Height:F1} spacingAfter={BlockRenderers.GetSpacingAfter(theme, block):F1} y={layout.Y:F1}");
             blocks.Add(layout);
         }
 

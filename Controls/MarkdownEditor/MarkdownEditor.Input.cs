@@ -68,11 +68,9 @@ public sealed partial class MarkdownEditor
     private void OnEditorCharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs e)
     {
         char character = e.Character;
-        MarkdownEditorLog.Write($"character received U+{(int)character:X4} caret={selection.End}");
 
         if (IsReadOnly)
         {
-            MarkdownEditorLog.Exit("editor is read-only");
             return;
         }
 
@@ -80,13 +78,11 @@ public sealed partial class MarkdownEditor
         // already handled them; inserting them again would duplicate the edit.
         if (character is '\r' or '\n' or '\t' or '\b' or (char)0x1B)
         {
-            MarkdownEditorLog.Exit("control character already handled by key down");
             return;
         }
 
         if (char.IsControl(character))
         {
-            MarkdownEditorLog.Exit("non-printable control character");
             return;
         }
 
@@ -106,19 +102,16 @@ public sealed partial class MarkdownEditor
 
         EscapeImageBlock();
 
-        MarkdownEditorLog.Write($"insert {MarkdownEditorLog.Snippet(text)} over {selection.Min}..{selection.Max}");
 
         TableGuardResult guard = GetTableGuard(selection, text);
         if (guard.Blocked)
         {
-            MarkdownEditorLog.Exit("edit refused by table protection");
             return;
         }
 
         string insertable = guard.Replacement;
         if (insertable.Length == 0)
         {
-            MarkdownEditorLog.Exit("typed characters were all table structure, nothing inserted");
             return;
         }
 
@@ -136,7 +129,6 @@ public sealed partial class MarkdownEditor
 
         global::Windows.Foundation.Point point = e.GetCurrentPoint(canvas).Position;
         int position = HitTestDocument(point);
-        MarkdownEditorLog.Write($"pointer pressed at {point.X:F0},{point.Y:F0} -> offset {position}, focusTaken={focused}");
 
         if (TryToggleTaskAt(point))
         {
@@ -372,11 +364,9 @@ public sealed partial class MarkdownEditor
     {
         bool ctrl = IsCtrlDown();
         bool shift = IsShiftDown();
-        MarkdownEditorLog.Write($"key down {e.Key} ctrl={ctrl} shift={shift} caret={selection.End} readOnly={IsReadOnly}");
 
         if (ctrl && HandleShortcut(e.Key, shift))
         {
-            MarkdownEditorLog.Write($"shortcut handled Ctrl+{e.Key}");
             e.Handled = true;
             return;
         }
@@ -731,7 +721,6 @@ public sealed partial class MarkdownEditor
         // here, so deleting one breaks the table without the user being able to see why.
         if (IsTableStructure(start, selection.End - start))
         {
-            MarkdownEditorLog.Write($"backspace blocked on table structure at {start}");
             return;
         }
 
@@ -788,7 +777,6 @@ public sealed partial class MarkdownEditor
 
         if (IsTableStructure(selection.End, end - selection.End))
         {
-            MarkdownEditorLog.Write($"delete blocked on table structure at {selection.End}");
             return;
         }
 
@@ -877,7 +865,6 @@ public sealed partial class MarkdownEditor
             start--;
         }
 
-        MarkdownEditorLog.Write($"deleting image block {start}..{end} {MarkdownEditorLog.Snippet(block.AltText)}");
         SetSelection(document.Replace(start, end - start, string.Empty, MarkdownEditKind.Deleting, selection));
     }
 
@@ -1156,7 +1143,6 @@ public sealed partial class MarkdownEditor
             }
         }
 
-        MarkdownEditorLog.Write($"removing attachment link {start}..{end}");
         SetSelection(document.Replace(start, end - start, string.Empty, MarkdownEditKind.Deleting, selection));
     }
 

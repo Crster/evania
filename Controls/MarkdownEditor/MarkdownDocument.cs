@@ -200,12 +200,10 @@ public sealed class MarkdownDocument
 
         if (length == 0 && replacement.Length == 0)
         {
-            MarkdownEditorLog.Exit($"no-op replace at {start}");
             return selectionBefore;
         }
 
         string removed = buffer.ToString(start, length);
-        MarkdownEditorLog.Write($"replace at {start} remove={MarkdownEditorLog.Snippet(removed)} insert={MarkdownEditorLog.Snippet(replacement)} kind={kind}");
         buffer.Remove(start, length);
         buffer.Insert(start, replacement);
         lineStarts = null;

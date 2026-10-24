@@ -163,7 +163,6 @@ public sealed partial class MarkdownEditor
 
         if (guard.Blocked)
         {
-            MarkdownEditorLog.Write($"delete refused, {selection.Min}..{selection.Max} held only table structure");
             return;
         }
 
@@ -172,7 +171,6 @@ public sealed partial class MarkdownEditor
             return;
         }
 
-        MarkdownEditorLog.Write($"deleting {selection.Min}..{selection.Max} keeping structure as {MarkdownEditorLog.Snippet(guard.Replacement)}");
         SetSelection(document.Replace(selection.Min, selection.Length, guard.Replacement, MarkdownEditKind.Deleting, selection));
     }
 

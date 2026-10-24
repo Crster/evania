@@ -343,6 +343,29 @@
                             </Grid>
                         </StackPanel>
                     </Grid>
+
+                    <Grid Style="{StaticResource SettingRow}" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <StackPanel>
+                            <TextBlock x:Name="ClearBrowsingTitle" Text="Clear browsing data" Style="{StaticResource SettingTitle}" />
+                            <TextBlock
+                                x:Name="ClearBrowsingSubtitle"
+                                Text="Signs you out and removes cookies, cache and history stored for Chat and Web Bookmarks."
+                                Style="{StaticResource SettingSubtitle}" />
+                        </StackPanel>
+                        <Button
+                            x:Name="ClearBrowsingButton"
+                            Grid.Column="1"
+                            Content="Clear"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource ActionButton}"
+                            Click="ClearBrowsingData_Click" />
+                        <WebView2
+                            x:Name="ProfileWebView"
+                            Width="1"
+                            Height="1"
+                            Opacity="0"
+                            IsHitTestVisible="False" />
+                    </Grid>
                 </StackPanel>
             </Border>
 
@@ -403,6 +426,26 @@
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
+                </StackPanel>
+            </Border>
+
+            <!-- ==================== About ==================== -->
+
+            <TextBlock x:Name="AboutHeader" Text="About" Style="{StaticResource SectionHeader}" />
+
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel Spacing="10">
+                    <TextBlock x:Name="AboutVersionText" Style="{StaticResource SettingTitle}" />
+                    <TextBlock
+                        x:Name="AboutSubtitle"
+                        Text="Evania keeps your data on this device and sends nothing to the developer."
+                        Style="{StaticResource SettingSubtitle}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="License" Tag="LICENSE" Style="{StaticResource ActionButton}" Click="ShowLegal_Click" />
+                        <Button Content="Terms of Use" Tag="TERMS.md" Style="{StaticResource ActionButton}" Click="ShowLegal_Click" />
+                        <Button Content="Privacy Policy" Tag="PRIVACY.md" Style="{StaticResource ActionButton}" Click="ShowLegal_Click" />
+                        <Button Content="Third-party notices" Tag="THIRD-PARTY-NOTICES.md" Style="{StaticResource ActionButton}" Click="ShowLegal_Click" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </StackPanel>

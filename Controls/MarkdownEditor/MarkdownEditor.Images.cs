@@ -121,7 +121,6 @@ public sealed partial class MarkdownEditor
         }
         catch (Exception ex)
         {
-            MarkdownEditorLog.Write($"image resolve failed for {MarkdownEditorLog.Snippet(target)}: {ex.Message}");
         }
 
         CanvasBitmap? bitmap = null;
@@ -135,7 +134,6 @@ public sealed partial class MarkdownEditor
             {
                 // A truncated or non-image attachment throws here; treat it like an unresolvable
                 // target so the block keeps its placeholder instead of failing the document's layout.
-                MarkdownEditorLog.Write($"image decode failed for {MarkdownEditorLog.Snippet(target)}: {ex.Message}");
             }
         }
 

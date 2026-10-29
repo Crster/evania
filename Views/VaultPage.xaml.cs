@@ -57,10 +57,8 @@ public sealed partial class VaultPage : Page
         {
             mainWindow.TitleBarSearchChanged += MainWindow_TitleBarSearchChanged;
 
-            if (!string.IsNullOrEmpty(mainWindow.TitleBarSearchText))
-            {
-                ViewModel.Filter = mainWindow.TitleBarSearchText;
-            }
+            // Always sync: the box is cleared on navigation, so a cached page must drop its stale filter.
+            ViewModel.Filter = mainWindow.TitleBarSearchText;
         }
 
         totpTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -458,7 +456,6 @@ public sealed partial class VaultPage : Page
             },
         };
         int isDecoding = 0;
-        int decodeAttemptCount = 0;
         int scanStatusShown = 0;
         bool codeApplied = false;
 
@@ -472,8 +469,7 @@ public sealed partial class VaultPage : Page
 
             try
             {
-                int attempt = System.Threading.Interlocked.Increment(ref decodeAttemptCount);
-                if (attempt == 1 && System.Threading.Interlocked.Exchange(ref scanStatusShown, 1) == 0)
+                if (System.Threading.Interlocked.Exchange(ref scanStatusShown, 1) == 0)
                 {
                     DispatcherQueue.TryEnqueue(() => status.Text = "Camera ready. Looking for a QR code...");
                 }
@@ -591,13 +587,13 @@ public sealed partial class VaultPage : Page
         StackPanel content = new() { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center };
         content.Children.Add(new Image
         {
-            Source = QrService.Render($"Username: {account.Username}\nPassword: {account.Password}", 320),
+            Source = QrService.Render(account.Password, 320),
             Width = 280,
             Height = 280,
         });
         content.Children.Add(new TextBlock
         {
-            Text = "Scan with your phone. Anyone who sees this code can read the login.",
+            Text = "Scan with your phone. Anyone who sees this code can read the password.",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.7,
             MaxWidth = 280,

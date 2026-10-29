@@ -41,13 +41,13 @@ public sealed partial class MarkdownEditor
     {
         topToolbar = CreateToolbarPill(
             Orientation.Horizontal,
-            CreateToolbarButton("add column", "Adds a column to the right of the current one", AddGlyph, InsertTableColumn),
-            CreateToolbarButton("delete column", "Removes the current column", RemoveGlyph, DeleteTableColumn));
+            CreateToolbarButton("Adds a column to the right of the current one", AddGlyph, InsertTableColumn),
+            CreateToolbarButton("Removes the current column", RemoveGlyph, DeleteTableColumn));
 
         leftToolbar = CreateToolbarPill(
             Orientation.Vertical,
-            CreateToolbarButton("add row", "Adds an empty row below the current one", AddGlyph, InsertTableRow),
-            CreateToolbarButton("delete row", "Removes the current row", RemoveGlyph, DeleteTableRow));
+            CreateToolbarButton("Adds an empty row below the current one", AddGlyph, InsertTableRow),
+            CreateToolbarButton("Removes the current row", RemoveGlyph, DeleteTableRow));
 
         ApplyTableToolbarTheme();
     }
@@ -102,7 +102,7 @@ public sealed partial class MarkdownEditor
         }
     }
 
-    private Button CreateToolbarButton(string label, string tooltip, string glyph, Action action)
+    private static Button CreateToolbarButton(string tooltip, string glyph, Action action)
     {
         var button = new Button
         {
@@ -119,10 +119,7 @@ public sealed partial class MarkdownEditor
         };
 
         ToolTipService.SetToolTip(button, tooltip);
-        button.Click += (_, _) =>
-        {
-            action();
-        };
+        button.Click += (_, _) => action();
 
         return button;
     }

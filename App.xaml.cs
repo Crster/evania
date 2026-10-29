@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Evania.Services;
 using Evania.Windows;
@@ -41,23 +41,35 @@ public partial class App : Application
     /// <param name="args">Details about the launch request and process.</param>
     protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
-        if (RedirectToOneRunningCopy())
+        AppActivationArguments activatedArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
+        string? copilotKeyState = CopilotKeyStateFrom(activatedArgs);
+
+        if (RedirectToOneRunningCopy(activatedArgs, copilotKeyState))
         {
             Environment.Exit(0);
 
             return;
         }
 
-        // Protocol activations can also arrive later, redirected here from a second copy the Copilot
-        // key launched; this subscription is what wakes the main instance for those.
+        // Protocol and launch activations can also arrive later, redirected here from a second copy;
+        // this subscription is what wakes the main instance for those.
         AppInstance.GetCurrent().Activated += OnActivated;
-
-
-        string? copilotKeyState = CopilotKeyStateFrom(AppInstance.GetCurrent().GetActivatedEventArgs());
 
         MainWindow = new MainWindow();
         CopilotKeyService.Attach(WinRT.Interop.WindowNative.GetWindowHandle(MainWindow));
         CopilotKeyService.Tapped += HandleCopilotKeyTapped;
+
+        GlobalHotkeyService.Attach();
+
+        // Subscribed for the life of the process, whether or not the tray is showing right now: the
+        // setting can be switched on later from the Settings page, and a handler that is added once
+        // here cannot end up doubled.
+        GlobalHotkeyService.Invoked += OnHotkeyInvoked;
+        GlobalHotkeyService.RestoreRequested += HandleTrayOpen;
+        GlobalHotkeyService.ChatRequested += HandleCopilotKeyTapped;
+        TrayIconService.OpenRequested += HandleTrayOpen;
+        TrayIconService.SettingsRequested += HandleTraySettings;
+        TrayIconService.ExitRequested += Quit;
 
         // A Copilot key press means the chat - said out loud rather than left to wherever the
         // opening menu item happens to land.
@@ -75,16 +87,6 @@ public partial class App : Application
 
         // A Copilot key press is an explicit request for the app, so it wins over starting hidden.
         bool startsHiddenInTray = settings.CloseToTray && settings.StartWithWindows && copilotKeyState != "Tap";
-
-        GlobalHotkeyService.Attach();
-
-        // Subscribed for the life of the process, whether or not the tray is showing right now: the
-        // setting can be switched on later from the Settings page, and a handler that is added once
-        // here cannot end up doubled.
-        GlobalHotkeyService.Invoked += OnHotkeyInvoked;
-        TrayIconService.OpenRequested += HandleTrayOpen;
-        TrayIconService.SettingsRequested += HandleTraySettings;
-        TrayIconService.ExitRequested += Quit;
 
         GlobalHotkeyService.Apply(settings.ScreenshotShortcut);
 
@@ -113,8 +115,13 @@ public partial class App : Application
         MainWindow.Activate();
     }
 
-    private static bool RedirectToOneRunningCopy()
+    private static bool RedirectToOneRunningCopy(AppActivationArguments activatedArgs, string? copilotKeyState)
     {
+        if (GlobalHotkeyService.TrySignalRunningInstance(copilotKeyState))
+        {
+            return true;
+        }
+
         AppInstance instance = AppInstance.FindOrRegisterForKey(InstanceKey);
 
         if (instance.IsCurrent)
@@ -126,7 +133,7 @@ public partial class App : Application
         {
             // Blocking is on purpose: this process is about to end, so there is no message loop
             // worth handing the wait to. The main instance receives the activation and wakes itself.
-            instance.RedirectActivationToAsync(AppInstance.GetCurrent().GetActivatedEventArgs())
+            instance.RedirectActivationToAsync(activatedArgs)
                 .AsTask()
                 .GetAwaiter()
                 .GetResult();
@@ -169,14 +176,28 @@ public partial class App : Application
 
     private static void OnActivated(object? sender, AppActivationArguments e)
     {
-        if (CopilotKeyStateFrom(e) == "Tap")
+        string? copilotKeyState = CopilotKeyStateFrom(e);
+
+        if (copilotKeyState is not null)
         {
-            MainWindow?.DispatcherQueue.TryEnqueue(() =>
+            if (copilotKeyState == "Tap")
             {
-                MainWindow?.NavigateToChat();
-                MainWindow?.Present();
-            });
+                MainWindow?.DispatcherQueue.TryEnqueue(() =>
+                {
+                    MainWindow?.NavigateToChat();
+                    MainWindow?.Present();
+                });
+            }
+
+            return;
         }
+
+        if (e.Kind == ExtendedActivationKind.StartupTask)
+        {
+            return;
+        }
+
+        MainWindow?.DispatcherQueue.TryEnqueue(() => MainWindow?.Present());
     }
 
     private static void HandleCopilotKeyTapped()

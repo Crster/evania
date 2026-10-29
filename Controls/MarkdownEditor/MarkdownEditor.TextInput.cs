@@ -40,7 +40,7 @@ public sealed partial class MarkdownEditor
             CoreTextServicesManager manager = CoreTextServicesManager.GetForCurrentView();
             editContext = manager.CreateEditContext();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // Desktop WinUI has no CoreWindow, so this can fail outright on some configurations.
             // Typing still works through CharacterReceived; only IME composition is lost.
@@ -249,7 +249,7 @@ public sealed partial class MarkdownEditor
             AutoContinueList(start, replacement);
             args.Result = CoreTextTextUpdatingResult.Succeeded;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             args.Result = CoreTextTextUpdatingResult.Failed;
         }

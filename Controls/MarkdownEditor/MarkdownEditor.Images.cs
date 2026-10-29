@@ -119,7 +119,7 @@ public sealed partial class MarkdownEditor
         {
             bytes = await resolver(target);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
         }
 
@@ -130,7 +130,7 @@ public sealed partial class MarkdownEditor
             {
                 bitmap = await DecodeAsync(bytes);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // A truncated or non-image attachment throws here; treat it like an unresolvable
                 // target so the block keeps its placeholder instead of failing the document's layout.

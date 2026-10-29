@@ -50,11 +50,7 @@ public static class NoteService
         });
 
     public static Task SaveViewportAsync(NoteDocument note) =>
-        Task.Run(() =>
-        {
-            DatabaseService.UpsertNote(note);
-            NoteDocument? stored = DatabaseService.GetNote(note.Id);
-        });
+        Task.Run(() => DatabaseService.UpsertNote(note));
 
     public static Task<NoteDocument?> GetAsync(ObjectId id) => Task.Run(() => Normalize(DatabaseService.GetNote(id)));
 

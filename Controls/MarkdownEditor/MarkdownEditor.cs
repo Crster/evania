@@ -273,7 +273,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
             ? viewport.ScrollOffset
             : anchor.Y - viewport.AnchorOffset;
         double target = Math.Max(0, offset);
-        bool accepted = scroller.ChangeView(null, target, null, disableAnimation: true);
+        scroller.ChangeView(null, target, null, disableAnimation: true);
         bool reached = Math.Abs(scroller.VerticalOffset - target) < 0.5;
         if (reached)
         {
@@ -312,8 +312,8 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
         return Math.Clamp(position, anchor.Block.Start, anchor.Block.End);
     }
 
-    private static string FormatViewport(MarkdownEditorViewport viewport) =>
-        $"offset={viewport.ScrollOffset:F1}, height={viewport.Height:F1}, source={viewport.SourcePosition}, anchorOffset={viewport.AnchorOffset:F1}, top={viewport.TopPosition}";
+
+
 
     private static void OnMarkdownPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -504,7 +504,7 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
                 session.Clear(Colors.Transparent);
                 DrawRegion(session, region);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // A throw here would tear down the app from a Win2D callback, and the region that
                 // caused it is the only useful clue.

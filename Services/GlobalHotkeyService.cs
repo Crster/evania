@@ -16,6 +16,8 @@ namespace Evania.Services;
 public static class GlobalHotkeyService
 {
     public static event Action? Invoked;
+    public static event Action? RestoreRequested;
+    public static event Action? ChatRequested;
 
     /// <summary>Why the last requested shortcut could not be registered, for the Settings page.</summary>
     public static string? LastError { get; private set; }
@@ -24,6 +26,8 @@ public static class GlobalHotkeyService
     public static ScreenshotHotkey Registered { get; private set; } = ScreenshotHotkey.None;
 
     private const uint WM_HOTKEY = 0x0312;
+    private const uint WM_RESTORE = 0x8000 + 0x0010;
+    private const uint WM_CHAT = 0x8000 + 0x0011;
     private const uint WM_KEYDOWN = 0x0100;
     private const uint WM_KEYUP = 0x0101;
     private const uint WM_SYSKEYDOWN = 0x0104;
@@ -110,6 +114,43 @@ public static class GlobalHotkeyService
         }
 
         windowProc = null;
+    }
+
+    /// <summary>
+    /// Wakes an already-running Evania copy via its message window, even when one copy was started
+    /// unpackaged and the other was launched from the Start menu as a packaged app.
+    /// </summary>
+    public static bool TrySignalRunningInstance(string? copilotKeyState)
+    {
+        IntPtr existing = NativeMethods.FindWindowEx(HWND_MESSAGE, IntPtr.Zero, ClassName, ClassName);
+
+        if (existing == IntPtr.Zero || existing == windowHandle)
+        {
+            return false;
+        }
+
+        if (copilotKeyState is "Down" or "Up")
+        {
+            return true;
+        }
+
+        _ = NativeMethods.GetWindowThreadProcessId(existing, out uint processId);
+        if (processId != 0)
+        {
+            NativeMethods.AllowSetForegroundWindow(processId);
+        }
+
+        uint message = copilotKeyState == "Tap" ? WM_CHAT : WM_RESTORE;
+        NativeMethods.SendMessageTimeout(
+            existing,
+            message,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            NativeMethods.SMTO_ABORTIFHUNG,
+            2000,
+            out _);
+
+        return true;
     }
 
     /// <summary>
@@ -201,6 +242,20 @@ public static class GlobalHotkeyService
         if (message == WM_HOTKEY && (int)wParam == HotkeyId)
         {
             Invoked?.Invoke();
+
+            return IntPtr.Zero;
+        }
+
+        if (message == WM_RESTORE)
+        {
+            RestoreRequested?.Invoke();
+
+            return IntPtr.Zero;
+        }
+
+        if (message == WM_CHAT)
+        {
+            ChatRequested?.Invoke();
 
             return IntPtr.Zero;
         }
@@ -384,6 +439,27 @@ public static class GlobalHotkeyService
 
         [DllImport("user32.dll")]
         public static extern IntPtr DefWindowProc(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
+        public const uint SMTO_ABORTIFHUNG = 0x0002;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter, string lpszClass, string lpszWindow);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SendMessageTimeout(
+            IntPtr hWnd,
+            uint msg,
+            IntPtr wParam,
+            IntPtr lParam,
+            uint fuFlags,
+            uint uTimeout,
+            out IntPtr lpdwResult);
+
+        [DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("user32.dll")]
+        public static extern bool AllowSetForegroundWindow(uint dwProcessId);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         public static extern IntPtr GetModuleHandle(string? lpModuleName);

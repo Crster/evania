@@ -124,7 +124,7 @@ public sealed partial class MarkdownEditor
 
     private void OnCanvasPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        bool focused = Focus(FocusState.Programmatic);
+        Focus(FocusState.Programmatic);
         HideImageTooltip();
 
         global::Windows.Foundation.Point point = e.GetCurrentPoint(canvas).Position;

@@ -835,9 +835,6 @@ public sealed partial class MarkdownEditor
             engine.Invalidate();
             SetSelection(restored);
         }
-        else
-        {
-        }
     }
 
     public void Redo()
@@ -846,9 +843,6 @@ public sealed partial class MarkdownEditor
         {
             engine.Invalidate();
             SetSelection(restored);
-        }
-        else
-        {
         }
     }
 
@@ -1031,7 +1025,7 @@ public sealed partial class MarkdownEditor
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // Some sources hand out formats that cannot be opened. That must never break pasting:
             // the plain-text path below still gets its chance.
@@ -1149,7 +1143,7 @@ public sealed partial class MarkdownEditor
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
         }
 

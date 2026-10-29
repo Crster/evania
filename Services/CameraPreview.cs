@@ -34,7 +34,6 @@ namespace Evania.Services
         // thread that owns the XAML tree — creating one off that thread is RPC_E_WRONG_THREAD.
         private readonly DispatcherQueue? _queue = DispatcherQueue.GetForCurrentThread();
         private int _frameInFlight;
-        private int _frameCount;
 
         /// <summary>The camera image to display, or null until the first frame arrives.</summary>
         public WriteableBitmap? Bitmap { get; private set; }
@@ -105,7 +104,6 @@ namespace Evania.Services
 
             _capture = capture;
             _reader = reader;
-            _frameCount = 0;
             return null;
         }
 
@@ -147,11 +145,6 @@ namespace Evania.Services
                 return;
             }
 
-            int frameCount = Interlocked.Increment(ref _frameCount);
-            if (frameCount == 1 || frameCount % 60 == 0)
-            {
-            }
-
             try
             {
                 if (FrameReceived is not null)
@@ -162,10 +155,6 @@ namespace Evania.Services
                     using DataReader dataReader = DataReader.FromBuffer(buffer);
                     dataReader.ReadBytes(pixels);
                     FrameReceived(pixels, bitmap.PixelWidth, bitmap.PixelHeight);
-
-                    if (frameCount == 1 || frameCount % 60 == 0)
-                    {
-                    }
                 }
             }
             catch (Exception)

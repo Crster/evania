@@ -13,15 +13,15 @@
   IgnorableNamespaces="mp uap uap3 uap5 uap6 uap11 desktop6 rescap">
 
 	<Identity
-	  Name="6d49ca0a-c00b-4ae7-8f12-1e03f16b71c4"
-	  Publisher="CN=Crster"
-	  Version="1.0.7.18" />
+	  Name="crster.Evania"
+	  Publisher="CN=7DD835A1-5FBD-4752-8DFE-60E220C329A5"
+	  Version="1.0.8.1" />
 
 	<mp:PhoneIdentity PhoneProductId="6d49ca0a-c00b-4ae7-8f12-1e03f16b71c4" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
 	<Properties>
 		<DisplayName>Evania</DisplayName>
-		<PublisherDisplayName>Crster</PublisherDisplayName>
+		<PublisherDisplayName>crster</PublisherDisplayName>
 		<Logo>Assets\StoreLogo.png</Logo>
 	</Properties>
 

@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 $projectPath = Join-Path $PSScriptRoot "Evania.csproj"
 $rid = "win-$Platform"
-$packageId = "6d49ca0a-c00b-4ae7-8f12-1e03f16b71c4"
+$packageId = "crster.Evania"
 $appId = "App"
 $certThumbprint = "E7BFA2284298F4307DE372E8543057925AEA76C7"
 

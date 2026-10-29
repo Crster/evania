@@ -348,6 +348,17 @@ public sealed partial class MarkdownEditor : Grid, IDisposable
     }
 
     /// <summary>
+    /// Forces the drawing surface to repaint. Hosts that reveal an already-created editor, or swap its
+    /// markdown while it is hidden, call this once it is visible so the new content is drawn.
+    /// </summary>
+    public void Redraw()
+    {
+        engine.Invalidate();
+        UpdateEditorLayout();
+        canvas.Invalidate();
+    }
+
+    /// <summary>
     /// Win2D creates its device asynchronously, so the first <see cref="OnLoaded"/> pass usually runs
     /// while <c>ReadyToDraw</c> is still false and <see cref="UpdateEditorLayout"/> bails out. Without
     /// this retry the canvas keeps its zero height, never raises RegionsInvalidated, and the editor

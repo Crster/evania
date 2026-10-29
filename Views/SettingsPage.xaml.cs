@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using MarkdownEditor = Evania.Controls.MarkdownEditor.MarkdownEditor;
 using Evania.Services;
 using Evania.ViewModels;
 using Evania.Windows;
@@ -372,20 +373,12 @@ public sealed partial class SettingsPage : Page
         string path = Path.Combine(AppContext.BaseDirectory, "Assets", "Legal", file);
         string text = File.Exists(path) ? await File.ReadAllTextAsync(path) : "This document is not available.";
 
-        ContentDialog dialog = new()
-        {
-            Title = ((Button)sender).Content,
-            Content = new ScrollViewer
-            {
-                MaxHeight = 420,
-                Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true }
-            },
-            CloseButtonText = "Close",
-            XamlRoot = XamlRoot
-        };
-
-        await dialog.ShowAsync();
+        LegalEditor.Markdown = text;
+        LegalOverlay.Visibility = Visibility.Visible;
+        LegalEditor.Redraw();
     }
+
+    private void LegalClose_Click(object sender, RoutedEventArgs e) => LegalOverlay.Visibility = Visibility.Collapsed;
 
     private void ErrorBar_Closed(InfoBar sender, object args) => ViewModel.ErrorMessage = string.Empty;
 

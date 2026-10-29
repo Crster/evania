@@ -9,6 +9,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:converters="using:Evania.Converters"
+    xmlns:editor="using:Evania.Controls.MarkdownEditor"
     mc:Ignorable="d"
     d:DataContext="{d:DesignInstance Type=vm:SettingsPageViewModel}"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
@@ -73,6 +74,7 @@
         </Style>
     </Page.Resources>
 
+    <Grid>
     <ScrollViewer Padding="40,20,40,48" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
         <StackPanel MaxWidth="880" HorizontalAlignment="Left">
 
@@ -450,4 +452,38 @@
             </Border>
         </StackPanel>
     </ScrollViewer>
+
+        <!-- Legal documents render in-page: the editor's Win2D surface never paints inside a ContentDialog popup. -->
+        <Grid
+            x:Name="LegalOverlay"
+            Visibility="Collapsed"
+            Background="{ThemeResource SmokeFillColorDefaultBrush}">
+            <Border
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12"
+                Padding="24,20"
+                Margin="40"
+                MaxWidth="720"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch">
+                <Grid RowSpacing="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <editor:MarkdownEditor
+                        x:Name="LegalEditor"
+                        IsReadOnly="True"
+                        IsSpellCheckEnabled="False" />
+                    <Button
+                        Grid.Row="1"
+                        Content="Close"
+                        HorizontalAlignment="Right"
+                        Click="LegalClose_Click" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
 </Page>
